@@ -18,22 +18,6 @@ from pydantic import BaseModel, Field
 from backend.core.baseline_engine import BaselineEngine
 from backend.core.data_generator import DEFAULT_CSV_PATH, generate_sample_patient_data
 
-# Optional imports from Member 2, Member 3, and Member 4 with graceful fallbacks
-try:
-    from backend.services.anomaly_detector import AnomalyDetector
-except (ImportError, AttributeError):
-    AnomalyDetector = None
-
-try:
-    from backend.services.twin_simulator import DigitalTwinSimulator
-except (ImportError, AttributeError):
-    DigitalTwinSimulator = None
-
-try:
-    from backend.services.xai_explainer import XAIExplainer
-except (ImportError, AttributeError):
-    XAIExplainer = None
-
 CSV_FILE_PATH = Path(DEFAULT_CSV_PATH)
 
 # Global in-memory data store and lock for concurrent safety
@@ -155,60 +139,40 @@ def get_monitoring(patient_id: str = Query(...)) -> dict[str, Any]:
     # Compute 7-day rolling baseline rows (last 14 days)
     baseline_days = BaselineEngine.compute_baselines(patient_df, window=7)
 
-    # Attempt to use real AnomalyDetector
-    anomaly_map: dict[str, dict[str, Any]] = {}
-    if AnomalyDetector is not None:
-        try:
-            detector = AnomalyDetector()
-            detected_rows = detector.fit_and_detect(patient_df)
-            for row in detected_rows:
-                ts = str(row.get("timestamp"))
-                anomaly_map[ts] = row
-        except Exception:
-            anomaly_map = {}
-
     merged_days: list[dict[str, Any]] = []
-    num_days = len(baseline_days)
 
     for idx, day in enumerate(baseline_days):
-        ts = str(day["timestamp"])
         day_copy = dict(day)
 
-        if ts in anomaly_map:
-            detector_row = anomaly_map[ts]
-            day_copy["anomaly_flag"] = int(detector_row.get("anomaly_flag", 0))
-            day_copy["anomaly_score"] = float(round(detector_row.get("anomaly_score", 0.0), 1))
-            day_copy["severity_label"] = str(detector_row.get("severity_label", "Normal"))
-        else:
-            # Deterministic stub anomaly output matching contract and personas
-            if patient_id == "patient_1":
+        # Baseline stub anomaly output matching contract and personas
+        if patient_id == "patient_1":
+            day_copy["anomaly_flag"] = 0
+            day_copy["anomaly_score"] = 12.4
+            day_copy["severity_label"] = "Normal"
+        elif patient_id == "patient_2":
+            # Days 46-60 (the last 14 days) represent the gradual drift
+            if idx < 3:
                 day_copy["anomaly_flag"] = 0
-                day_copy["anomaly_score"] = 12.4
+                day_copy["anomaly_score"] = 32.0 + idx * 2.5
                 day_copy["severity_label"] = "Normal"
-            elif patient_id == "patient_2":
-                # Days 46-60 (the last 14 days) represent the gradual drift
-                if idx < 3:
-                    day_copy["anomaly_flag"] = 0
-                    day_copy["anomaly_score"] = 32.0 + idx * 2.5
-                    day_copy["severity_label"] = "Normal"
-                elif idx < 8:
-                    day_copy["anomaly_flag"] = 1
-                    day_copy["anomaly_score"] = 52.0 + idx * 3.0
-                    day_copy["severity_label"] = "Moderate Pattern Drift"
-                else:
-                    day_copy["anomaly_flag"] = 1
-                    day_copy["anomaly_score"] = 72.0 + (idx - 8) * 4.2
-                    day_copy["severity_label"] = "Critical Multivariate Anomaly"
-            elif patient_id == "patient_3":
-                # Recovery phase
-                score = max(18.0, 42.0 - (idx * 2.0))
-                day_copy["anomaly_flag"] = 1 if score >= 40.0 else 0
-                day_copy["anomaly_score"] = round(score, 1)
-                day_copy["severity_label"] = "Moderate Pattern Drift" if score >= 40.0 else "Normal"
+            elif idx < 8:
+                day_copy["anomaly_flag"] = 1
+                day_copy["anomaly_score"] = 52.0 + idx * 3.0
+                day_copy["severity_label"] = "Moderate Pattern Drift"
             else:
-                day_copy["anomaly_flag"] = 0
-                day_copy["anomaly_score"] = 15.0
-                day_copy["severity_label"] = "Normal"
+                day_copy["anomaly_flag"] = 1
+                day_copy["anomaly_score"] = 72.0 + (idx - 8) * 4.2
+                day_copy["severity_label"] = "Critical Multivariate Anomaly"
+        elif patient_id == "patient_3":
+            # Recovery phase
+            score = max(18.0, 42.0 - (idx * 2.0))
+            day_copy["anomaly_flag"] = 1 if score >= 40.0 else 0
+            day_copy["anomaly_score"] = round(score, 1)
+            day_copy["severity_label"] = "Moderate Pattern Drift" if score >= 40.0 else "Normal"
+        else:
+            day_copy["anomaly_flag"] = 0
+            day_copy["anomaly_score"] = 15.0
+            day_copy["severity_label"] = "Normal"
 
         merged_days.append(day_copy)
 
@@ -233,20 +197,7 @@ def get_twin_state(patient_id: str = Query(...)) -> dict[str, Any]:
 
     latest_row = patient_df.iloc[-1].to_dict()
 
-    if DigitalTwinSimulator is not None:
-        try:
-            simulator = DigitalTwinSimulator()
-            result = simulator.compute_twin_state(latest_row)
-            return {
-                "patient_id": patient_id,
-                "twin_status": result.get("twin_status", "Optimal"),
-                "scores": result.get("scores", {}),
-                "organ_highlights": result.get("organ_highlights", {}),
-            }
-        except Exception:
-            pass
-
-    # High-fidelity stub matching contract
+    # Stub response matching contract
     if patient_id == "patient_1":
         return {
             "patient_id": patient_id,
@@ -310,19 +261,6 @@ def post_simulate(payload: SimulateRequest) -> dict[str, Any]:
             load_dataset()
         patient_df = _patients_df[_patients_df["patient_id"] == payload.patient_id].copy()
 
-    if DigitalTwinSimulator is not None:
-        try:
-            simulator = DigitalTwinSimulator()
-            result = simulator.simulate_counterfactual(
-                patient_df,
-                modified_inputs=payload.model_dump(),
-                horizon_days=7,
-            )
-            if "scenario_projections" in result and "ai_prescription" in result:
-                return result
-        except Exception:
-            pass
-
     # Stub response matching contract
     base_hr = 78.2 if payload.patient_id == "patient_2" else (58.0 if payload.patient_id == "patient_1" else 68.0)
     base_risk = 64 if payload.patient_id == "patient_2" else (18 if payload.patient_id == "patient_1" else 35)
@@ -373,18 +311,6 @@ def get_explain_alert(patient_id: str = Query(...)) -> dict[str, Any]:
         if _patients_df.empty:
             load_dataset()
         patient_df = _patients_df[_patients_df["patient_id"] == patient_id].copy()
-
-    if XAIExplainer is not None:
-        try:
-            explainer = XAIExplainer()
-            result = explainer.explain_latest_alert(patient_df)
-            return {
-                "patient_id": patient_id,
-                "explanation_summary": result.get("explanation_summary", ""),
-                "feature_attributions": result.get("feature_attributions", []),
-            }
-        except Exception:
-            pass
 
     # Stub response matching contract
     if patient_id == "patient_1":
