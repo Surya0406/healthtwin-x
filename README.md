@@ -1,16 +1,20 @@
-# HealthTwin X: Personal Digital Twin & Predictive Health Monitoring
+# HealthTwin X: Clinical Digital Twin & Predictive Health Monitoring
 
-HealthTwin X is a real-time clinical digital twin platform that models individual physiological baselines, continuously detects subtle multivariate health drift using machine learning, and provides counterfactual what-if simulation with explainable clinical prescriptions.
+HealthTwin X is a real-time clinical digital twin command center that models individual physiological baselines, continuously detects subtle multivariate health drift using an unsupervised machine learning ensemble, predicts biological twin age, and provides multi-output counterfactual simulation with explainable root-cause clinical prescriptions.
 
 ---
 
 ## Architecture Overview
 
-- **Personal Baseline Modeling**: Fits personalized normal reference distributions per patient, accounting for individual baseline differences rather than generic population averages.
-- **Unsupervised Drift & Anomaly Detection**: Employs PyOD Isolation Forest on 6 core vitals, 3-day rolling deltas, and vital ratios to detect multivariate strain before acute decompensation.
-- **Dynamic Digital Twin Simulation**: Simulates physiological organ responses and forecasts forward vitals across varying lifestyle interventions.
-- **Explainable Clinical Prescriptions (XAI)**: Attributes root causes of detected drift to specific biometric metrics and generates targeted behavioral interventions.
-- **Reactive Clinical Dashboard**: Modern dark-themed dashboard rendering interactive rolling baseline bands (±2σ), anomaly pulse indicators, and live simulation controls.
+- **Expanded 12-Persona Clinical Dataset**: 90 days of daily multivariate vitals across 12 diverse archetypes (Endurance Athlete, Overtraining Burnout, Corporate Autonomic Strain, Early Respiratory Infection, Pre-Hypertension Drift, Circadian Disruption, Senior Citizens with age-adjusted baselines, Metabolic Syndrome, and Recovery Cohorts).
+- **Multi-Scale Personal Baseline Engine**: Computes both 7-day short-term acute bands ($\mu \pm 2\sigma$) and 30-day long-term chronic reference lines, dynamic normal bounds, baseline stability scores (0-100), and drift percentages ($\Delta\%$).
+- **PyOD Multi-Model Ensemble**: Combines Isolation Forest (`IForest`), Empirical Cumulative Distribution (`ECOD`), and Copula Outlier Detection (`COPOD`) into a composite anomaly score (0-100) with model agreement metrics ("3/3 Models Agree"), clinical pattern categorization, and drift velocity tracking (pts/day).
+- **Biological Twin Age & Counterfactual Forecasting**: Estimates Biological Age vs Chronological Age dynamically based on cardiovascular strain and sleep deficit. Features 14-day multi-output forward forecasting (Heart Rate, Systolic BP, Risk Score) with automated optimal habit targets.
+- **Temporal Root-Cause XAI & Onset Localizer**: Integrates TreeSHAP feature attributions, localizes the exact chronological drift onset date, and constructs a root-cause chain-reaction cascade narrative.
+- **Interactive Sticky Split-Screen Command Center**:
+  - Sticky Left Panel (4 cols): Interactive SVG Human Digital Twin with clickable anatomical organ nodes (Heart, Brain/Nervous System, Lungs, Metabolism), real-time healing preview, and biological age breakdown.
+  - Workspace Tabs (8 cols): 90-day timeline scrubber with clickable points, traditional vs dynamic baseline toggle, 6-vitals switcher, 14-day counterfactual simulator with Auto-Optimize and Pin Scenario, Clinical Copilot Q&A chat, and SmartWatch live streaming.
+  - Clinical Exporters: 1-click printable clinical PDF report (`window.print()`) and CSV dataset ingestion uploader.
 
 ---
 
@@ -18,67 +22,52 @@ HealthTwin X is a real-time clinical digital twin platform that models individua
 
 | Member | Role | Core Ownership / Scope |
 | :--- | :--- | :--- |
-| **Member 1** | Backend Lead & Orchestration | FastAPI core application, DB/pipeline, routing, telemetry streaming |
-| **Member 2 (ML + Frontend)** | ML & Baseline Visualization | `backend/services/anomaly_detector.py`, `backend/saved_models/*`, `frontend/src/components/BaselineCharts.jsx` |
-| **Member 3** | Digital Twin Simulation | Physiological simulation engine, forward forecasting, counterfactual models |
-| **Member 4** | XAI & Clinical Prescription | SHAP feature attribution, severity categorizer, clinical prescription engine |
-| **Member 5** | Frontend Lead & UX | Main Dashboard layout, Twin visualizer (3D/canvas), global state, navigation |
+| **Member 1** | Ingestion & Orchestration | `data_generator.py` (12 personas, 90 days), `baseline_engine.py` (7d/30d multi-scale baselines, stability score), `main.py` routing, CSV ingestion |
+| **Member 2** | ML Ensemble & Baseline Visualization | `anomaly_detector.py` (PyOD IForest + ECOD + COPOD ensemble, pattern classification, drift velocity), `BaselineCharts.jsx` |
+| **Member 3** | Digital Twin Simulation & Biological Age | `twin_simulator.py` (subsystems, biological twin age vs chronological age, 14-day multi-output forward trajectories, optimal targets) |
+| **Member 4** | Temporal Root-Cause XAI | `xai_explainer.py` (TreeSHAP attributions, drift onset date localization, root-cause cascade narrative, diagnostic Q&A) |
+| **Member 5** | Frontend Lead & Command Center UX | `App.jsx` (sticky split-screen layout, 12 personas dropdown, 90-day scrubber, PDF report exporter, CSV uploader), `TwinVisualizer.jsx`, `WhatIfSandbox.jsx` |
 
 ---
 
-## Quick Start (Windows, one command)
+## Quick Start
 
-Prerequisites: Python 3.10+ and Node.js 18+.
+### Linux & macOS
+```bash
+./start.sh
+```
 
+### Windows (PowerShell)
 ```powershell
 .\start.ps1
 ```
 
-This creates `.venv` and installs backend packages on the first run, runs `npm install` for the frontend, then starts both servers:
+### Manual Setup
+```bash
+# Backend (from repository root)
+python3 -m uvicorn backend.main:app --port 8000
 
-- API: http://localhost:8000 (interactive docs at `/docs`)
-- Dashboard: http://localhost:5173 (opens on `patient_2`)
-
-If the dashboard shows an amber "Backend not reachable" banner, it is displaying offline demo data. Check that the API window is running.
-
-### Manual setup
-
-```powershell
-# Backend (from the repo root)
-py -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m uvicorn backend.main:app --port 8000
-
-# Frontend (second terminal)
+# Frontend (in another terminal)
 cd frontend
 npm install
 npm run dev
 ```
 
+- **Frontend Command Center**: [http://localhost:5173](http://localhost:5173)
+- **FastAPI Interactive Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
 ---
 
 ## API Endpoints
 
-Full request and response shapes are in `shared_contracts/api_contract.md`.
-
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/patients` | List the three patient personas |
-| `GET` | `/api/patient/monitoring?patient_id=` | Last 14 days: vitals, 7-day baselines and bands, z-scores, anomaly flag, score and severity |
-| `GET` | `/api/patient/twin-state?patient_id=` | Digital twin status, four subsystem scores, organ colours |
-| `POST` | `/api/patient/simulate` | 7-day what-if projection and AI prescription for new sleep, steps and stress |
-| `GET` | `/api/patient/explain-alert?patient_id=` | SHAP feature attributions and a plain-language summary |
-| `POST` | `/api/patient/log-vitals` | Append a day of vitals (in memory, written through to the CSV) |
-
-Unknown `patient_id` values return HTTP 404.
-
----
-
-## Project Layout
-
-```
-backend/            FastAPI app (main.py), core/ (data + baselines), services/ (ML)
-frontend/           Vite + React + Tailwind + Recharts dashboard
-shared_contracts/   api_contract.md and sample_patient_data.csv
-start.ps1           one-command launcher
-```
+| `GET` | `/api/patients` | List all 12 diverse patient personas with clinical archetypes |
+| `GET` | `/api/patient/monitoring?patient_id=` | 90 days: vitals, 7d/30d baselines, PyOD ensemble score, agreement, drift velocity, stability |
+| `GET` | `/api/patient/twin-state?patient_id=` | Digital twin status, subsystem scores, organ highlights, biological twin age vs chronological age |
+| `POST` | `/api/patient/simulate` | 14-day multi-output trajectory projections (HR, BP, Risk) & optimal habit targets |
+| `GET` | `/api/patient/explain-alert?patient_id=` | SHAP feature attributions, drift onset date localizer, chain-reaction cascade |
+| `POST` | `/api/patient/log-vitals` | Append a daily vital observation to in-memory DataFrame & CSV |
+| `POST` | `/api/patient/simulate-next-day` | Auto-generate next chronological day of wearable telemetry (3s live stream) |
+| `POST` | `/api/patient/inject-event` | Inject acute sympathetic stress spike or restorative recovery day |
+| `POST` | `/api/patients/upload-csv` | Upload custom patient vitals CSV file and reload in-memory dataset |

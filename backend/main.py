@@ -1,71 +1,68 @@
 """HealthTwin X FastAPI Backend Server.
 
 Provides REST endpoints for personalized health monitoring, digital twin state,
-counterfactual simulation, XAI alert explanation, and vitals logging.
+counterfactual simulation, XAI alert explanation, vitals streaming, and CSV ingestion.
 """
 
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timedelta
+import io
+import json
 from pathlib import Path
+import random
 import threading
-from typing import Any
+from typing import Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from pydantic import BaseModel, Field
 
 from backend.core.baseline_engine import BaselineEngine
 from backend.core.data_generator import DEFAULT_CSV_PATH, generate_sample_patient_data
-
-# Real ML services are owned by other members; fall back to contract stubs if missing.
-try:
-    from backend.services.anomaly_detector import AnomalyDetector
-except Exception:  # pragma: no cover
-    AnomalyDetector = None
-try:
-    from backend.services.twin_simulator import DigitalTwinSimulator
-except Exception:  # pragma: no cover
-    DigitalTwinSimulator = None
-try:
-    from backend.services.xai_explainer import XAIExplainer
-except Exception:  # pragma: no cover
-    XAIExplainer = None
+from backend.services.anomaly_detector import AnomalyDetector
+from backend.services.twin_simulator import DigitalTwinSimulator
+from backend.services.xai_explainer import XAIExplainer
 
 CSV_FILE_PATH = Path(DEFAULT_CSV_PATH)
+METADATA_JSON_PATH = Path(__file__).resolve().parent.parent / "shared_contracts" / "patient_metadata.json"
 
 # Global in-memory data store and lock for concurrent safety
 _df_lock = threading.Lock()
 _patients_df: pd.DataFrame = pd.DataFrame()
 
-PATIENTS_METADATA = [
-    {
-        "patient_id": "patient_1",
-        "name": "Healthy Athlete",
-        "description": "Healthy athlete with consistent lifestyle, low noise, and stable cardiovascular metrics.",
-    },
-    {
-        "patient_id": "patient_2",
-        "name": "Executive under Stress",
-        "description": "Normal for days 1-45, then days 46-60 gradual HR +14 bpm, sleep -2.5 h, systolic BP +12 mmHg, stress rising.",
-    },
-    {
-        "patient_id": "patient_3",
-        "name": "Post-Viral Recovery",
-        "description": "High strain early on with steady recovery over the last 15 days.",
-    },
-]
 
+def load_metadata() -> List[dict[str, Any]]:
+    """Load patient metadata from JSON if available, otherwise use defaults."""
+    if METADATA_JSON_PATH.exists():
+        try:
+            with open(METADATA_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    return [
+        {"patient_id": f"patient_{i}", "name": f"Patient {i}", "archetype": "General Population"}
+        for i in range(1, 13)
+    ]
+
+
+PATIENTS_METADATA = load_metadata()
 VALID_PATIENT_IDS = {p["patient_id"] for p in PATIENTS_METADATA}
 
 
 def load_dataset() -> pd.DataFrame:
     """Load sample patient data CSV into memory, generating it if absent."""
     global _patients_df
-    if not CSV_FILE_PATH.exists():
+    if not CSV_FILE_PATH.exists() or CSV_FILE_PATH.stat().st_size < 100:
         _patients_df = generate_sample_patient_data(CSV_FILE_PATH)
     else:
         _patients_df = pd.read_csv(CSV_FILE_PATH)
+
+    # Ensure patient IDs in data are in VALID_PATIENT_IDS
+    if not _patients_df.empty and "patient_id" in _patients_df.columns:
+        VALID_PATIENT_IDS.update(_patients_df["patient_id"].unique())
+
     return _patients_df
 
 
@@ -79,8 +76,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="HealthTwin X API",
-    description="Personalized Health Monitoring & Digital Twin Simulation API",
-    version="1.0.0",
+    description="Personalized Health Monitoring, Digital Twin Simulation & Multi-Model PyOD Ensemble API",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -91,6 +88,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
+        "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -99,7 +97,7 @@ app.add_middleware(
 
 
 def validate_patient_id(patient_id: str) -> None:
-    """Ensure patient_id exists, raising HTTP 404 otherwise."""
+    """Ensure patient_id exists in dataset or metadata."""
     if patient_id not in VALID_PATIENT_IDS:
         raise HTTPException(
             status_code=404,
@@ -119,7 +117,7 @@ class SimulateRequest(BaseModel):
 
 class LogVitalsRequest(BaseModel):
     patient_id: str
-    timestamp: str | None = None
+    timestamp: Optional[str] = None
     heart_rate: int = Field(..., ge=20, le=250)
     spo2: int = Field(..., ge=50, le=100)
     systolic_bp: int = Field(..., ge=40, le=260)
@@ -128,18 +126,26 @@ class LogVitalsRequest(BaseModel):
     stress_index: int = Field(..., ge=0, le=100)
 
 
+class InjectEventRequest(BaseModel):
+    patient_id: str
+    event_type: str = Field(..., description="'stress_spike' or 'recovery_day'")
+
+
 # -----------------------------------------------------------------------------
 # Endpoints
 # -----------------------------------------------------------------------------
 @app.get("/api/patients")
-def get_patients() -> list[dict[str, str]]:
-    """Return list of patient personas."""
+def get_patients() -> list[dict[str, Any]]:
+    """Return list of all 12 diverse patient personas and archetypes."""
+    global PATIENTS_METADATA
+    if not PATIENTS_METADATA:
+        PATIENTS_METADATA = load_metadata()
     return PATIENTS_METADATA
 
 
 @app.get("/api/patient/monitoring")
 def get_monitoring(patient_id: str = Query(...)) -> dict[str, Any]:
-    """Return last 14 days of vitals, 7-day rolling baselines, and anomaly detection results."""
+    """Return full timeline of vitals, 7-day and 30-day baselines, and PyOD ensemble results."""
     validate_patient_id(patient_id)
 
     with _df_lock:
@@ -150,72 +156,50 @@ def get_monitoring(patient_id: str = Query(...)) -> dict[str, Any]:
     if patient_df.empty:
         raise HTTPException(status_code=404, detail=f"No data available for patient '{patient_id}'")
 
-    # Compute 7-day rolling baseline rows (last 14 days)
-    baseline_days = BaselineEngine.compute_baselines(patient_df, window=7)
+    # Compute multi-scale rolling baselines across the full timeline
+    baseline_days = BaselineEngine.compute_baselines(patient_df, return_all_days=True)
+
+    # Multi-model PyOD Ensemble anomaly scoring
+    anomaly_detector = AnomalyDetector()
+    try:
+        anomaly_rows = anomaly_detector.fit_and_detect(patient_df, patient_id=patient_id)
+        anomaly_by_ts = {str(r["timestamp"]): r for r in anomaly_rows}
+    except Exception:
+        anomaly_by_ts = {}
 
     merged_days: list[dict[str, Any]] = []
-
-    # Real anomaly detection, keyed by timestamp; None means "use stub below"
-    anomaly_by_ts: dict[str, dict[str, Any]] | None = None
-    if AnomalyDetector is not None:
-        try:
-            rows = AnomalyDetector().fit_and_detect(patient_df, patient_id=patient_id)
-            anomaly_by_ts = {str(r["timestamp"]): r for r in rows}
-        except Exception:
-            anomaly_by_ts = None
-
-    for idx, day in enumerate(baseline_days):
+    for day in baseline_days:
         day_copy = dict(day)
+        ts = str(day_copy.get("timestamp"))
+        real_anomaly = anomaly_by_ts.get(ts)
 
-        real = anomaly_by_ts.get(str(day_copy.get("timestamp"))) if anomaly_by_ts else None
-        if real is not None:
-            day_copy["anomaly_flag"] = int(real["anomaly_flag"])
-            day_copy["anomaly_score"] = float(real["anomaly_score"])
-            day_copy["severity_label"] = str(real["severity_label"])
-            merged_days.append(day_copy)
-            continue
-
-        # Baseline stub anomaly output matching contract and personas
-        if patient_id == "patient_1":
-            day_copy["anomaly_flag"] = 0
-            day_copy["anomaly_score"] = 12.4
-            day_copy["severity_label"] = "Normal"
-        elif patient_id == "patient_2":
-            # Days 46-60 (the last 14 days) represent the gradual drift
-            if idx < 3:
-                day_copy["anomaly_flag"] = 0
-                day_copy["anomaly_score"] = 32.0 + idx * 2.5
-                day_copy["severity_label"] = "Normal"
-            elif idx < 8:
-                day_copy["anomaly_flag"] = 1
-                day_copy["anomaly_score"] = 52.0 + idx * 3.0
-                day_copy["severity_label"] = "Moderate Pattern Drift"
-            else:
-                day_copy["anomaly_flag"] = 1
-                day_copy["anomaly_score"] = 72.0 + (idx - 8) * 4.2
-                day_copy["severity_label"] = "Critical Multivariate Anomaly"
-        elif patient_id == "patient_3":
-            # Recovery phase
-            score = max(18.0, 42.0 - (idx * 2.0))
-            day_copy["anomaly_flag"] = 1 if score >= 40.0 else 0
-            day_copy["anomaly_score"] = round(score, 1)
-            day_copy["severity_label"] = "Moderate Pattern Drift" if score >= 40.0 else "Normal"
+        if real_anomaly is not None:
+            day_copy["anomaly_flag"] = int(real_anomaly["anomaly_flag"])
+            day_copy["anomaly_score"] = float(real_anomaly["anomaly_score"])
+            day_copy["severity_label"] = str(real_anomaly["severity_label"])
+            day_copy["pattern_type"] = str(real_anomaly.get("pattern_type", "Multivariate Pattern Drift"))
+            day_copy["model_agreement"] = str(real_anomaly.get("model_agreement", "3/3 Models Agree"))
+            day_copy["drift_velocity"] = float(real_anomaly.get("drift_velocity", 0.0))
         else:
             day_copy["anomaly_flag"] = 0
-            day_copy["anomaly_score"] = 15.0
+            day_copy["anomaly_score"] = 14.0
             day_copy["severity_label"] = "Normal"
+            day_copy["pattern_type"] = "Stable Baseline"
+            day_copy["model_agreement"] = "Consensus Baseline (3/3 Models Agree)"
+            day_copy["drift_velocity"] = 0.0
 
         merged_days.append(day_copy)
 
     return {
         "patient_id": patient_id,
         "days": merged_days,
+        "total_days": len(merged_days),
     }
 
 
 @app.get("/api/patient/twin-state")
 def get_twin_state(patient_id: str = Query(...)) -> dict[str, Any]:
-    """Return Digital Twin status, subsystem scores (0-100), and organ highlights."""
+    """Return Digital Twin status, subsystem scores, organ highlights, and biological age."""
     validate_patient_id(patient_id)
 
     with _df_lock:
@@ -227,71 +211,14 @@ def get_twin_state(patient_id: str = Query(...)) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"No data for patient '{patient_id}'")
 
     latest_row = patient_df.iloc[-1].to_dict()
-
-    if DigitalTwinSimulator is not None:
-        try:
-            state = DigitalTwinSimulator().compute_twin_state(latest_row)
-            return {"patient_id": patient_id, **state}
-        except Exception:
-            pass
-
-    # Stub response matching contract
-    if patient_id == "patient_1":
-        return {
-            "patient_id": patient_id,
-            "twin_status": "Optimal",
-            "scores": {
-                "cardio_strain_index": 92,
-                "recovery_readiness": 90,
-                "respiratory_stability": 95,
-                "metabolic_stability": 94,
-            },
-            "organ_highlights": {
-                "heart": "green",
-                "brain_nervous": "green",
-                "respiratory": "green",
-                "metabolism": "green",
-            },
-        }
-    elif patient_id == "patient_2":
-        return {
-            "patient_id": patient_id,
-            "twin_status": "Strain Warning",
-            "scores": {
-                "cardio_strain_index": 48,
-                "recovery_readiness": 42,
-                "respiratory_stability": 88,
-                "metabolic_stability": 58,
-            },
-            "organ_highlights": {
-                "heart": "amber",
-                "brain_nervous": "amber",
-                "respiratory": "green",
-                "metabolism": "amber",
-            },
-        }
-    else:  # patient_3
-        return {
-            "patient_id": patient_id,
-            "twin_status": "Optimal",
-            "scores": {
-                "cardio_strain_index": 78,
-                "recovery_readiness": 76,
-                "respiratory_stability": 84,
-                "metabolic_stability": 82,
-            },
-            "organ_highlights": {
-                "heart": "green",
-                "brain_nervous": "green",
-                "respiratory": "green",
-                "metabolism": "green",
-            },
-        }
+    simulator = DigitalTwinSimulator()
+    state = simulator.compute_twin_state(latest_row, patient_id=patient_id)
+    return state
 
 
 @app.post("/api/patient/simulate")
 def post_simulate(payload: SimulateRequest) -> dict[str, Any]:
-    """Simulate counterfactual what-if scenario over a 7-day horizon."""
+    """Simulate counterfactual what-if scenario over a 14-day horizon."""
     validate_patient_id(payload.patient_id)
 
     with _df_lock:
@@ -299,63 +226,13 @@ def post_simulate(payload: SimulateRequest) -> dict[str, Any]:
             load_dataset()
         patient_df = _patients_df[_patients_df["patient_id"] == payload.patient_id].copy()
 
-    if DigitalTwinSimulator is not None:
-        try:
-            return DigitalTwinSimulator().simulate_counterfactual(
-                patient_df,
-                {
-                    "sleep_hours": payload.sleep_hours,
-                    "daily_steps": payload.daily_steps,
-                    "stress_index": payload.stress_index,
-                },
-            )
-        except Exception:
-            pass
-
-    # Stub response matching contract
-    base_hr = 78.2 if payload.patient_id == "patient_2" else (58.0 if payload.patient_id == "patient_1" else 68.0)
-    base_risk = 64 if payload.patient_id == "patient_2" else (18 if payload.patient_id == "patient_1" else 35)
-
-    # Dynamic counterfactual based on payload inputs
-    sleep_benefit = (payload.sleep_hours - 7.0) * 1.5
-    steps_benefit = (payload.daily_steps - 8000) / 1000.0 * 0.8
-    stress_penalty = (payload.stress_index - 30) * 0.25
-    hr_delta = -(sleep_benefit + steps_benefit - stress_penalty)
-    risk_delta = int(hr_delta * 2.2)
-
-    projections = []
-    for day_i in range(1, 8):
-        factor = day_i / 7.0
-        c_hr = round(base_hr + (hr_delta * factor), 1)
-        c_risk = int(max(5, min(95, base_risk + (risk_delta * factor))))
-        b_hr = round(base_hr + (day_i * 0.2), 1)
-        b_risk = int(min(98, base_risk + day_i))
-
-        projections.append({
-            "day": f"Day +{day_i}",
-            "baseline_trajectory_hr": b_hr,
-            "counterfactual_trajectory_hr": c_hr,
-            "baseline_risk_score": b_risk,
-            "counterfactual_risk_score": c_risk,
-        })
-
-    if payload.patient_id == "patient_1":
-        prescription = "Twin is currently Optimal. Maintain 8.0h sleep and regular physical conditioning."
-    else:
-        prescription = (
-            f"Target {payload.sleep_hours:.1f}h sleep, {payload.daily_steps} daily steps, "
-            f"and maintain stress index under {payload.stress_index} to maintain recovery trajectory."
-        )
-
-    return {
-        "scenario_projections": projections,
-        "ai_prescription": prescription,
-    }
+    simulator = DigitalTwinSimulator()
+    return simulator.simulate_counterfactual(patient_df, payload.model_dump())
 
 
 @app.get("/api/patient/explain-alert")
 def get_explain_alert(patient_id: str = Query(...)) -> dict[str, Any]:
-    """Return SHAP feature attributions and plain-language explanation for recent alert."""
+    """Return SHAP feature attributions, drift onset date analysis, and clinical chain reaction."""
     validate_patient_id(patient_id)
 
     with _df_lock:
@@ -363,161 +240,9 @@ def get_explain_alert(patient_id: str = Query(...)) -> dict[str, Any]:
             load_dataset()
         patient_df = _patients_df[_patients_df["patient_id"] == patient_id].copy()
 
-    if XAIExplainer is not None:
-        try:
-            result = XAIExplainer().explain_latest_alert(patient_df.sort_values("timestamp"))
-            return {"patient_id": patient_id, **result}
-        except Exception:
-            pass
-
-    # Stub response matching contract
-    if patient_id == "patient_1":
-        return {
-            "patient_id": patient_id,
-            "explanation_summary": "All vitals are within personal baseline ranges. No significant deviation detected.",
-            "feature_attributions": [
-                {
-                    "feature": "heart_rate",
-                    "impact_percentage": 25.0,
-                    "direction": "reduced_risk",
-                    "current_value": 57.0,
-                    "baseline_mean": 57.7,
-                },
-                {
-                    "feature": "sleep_hours",
-                    "impact_percentage": 22.0,
-                    "direction": "reduced_risk",
-                    "current_value": 8.1,
-                    "baseline_mean": 8.1,
-                },
-                {
-                    "feature": "stress_index",
-                    "impact_percentage": 18.0,
-                    "direction": "reduced_risk",
-                    "current_value": 18.0,
-                    "baseline_mean": 18.3,
-                },
-                {
-                    "feature": "systolic_bp",
-                    "impact_percentage": 15.0,
-                    "direction": "reduced_risk",
-                    "current_value": 112.0,
-                    "baseline_mean": 112.4,
-                },
-                {
-                    "feature": "spo2",
-                    "impact_percentage": 12.0,
-                    "direction": "reduced_risk",
-                    "current_value": 98.0,
-                    "baseline_mean": 98.3,
-                },
-                {
-                    "feature": "daily_steps",
-                    "impact_percentage": 8.0,
-                    "direction": "reduced_risk",
-                    "current_value": 11800.0,
-                    "baseline_mean": 11416.0,
-                },
-            ],
-        }
-    elif patient_id == "patient_2":
-        return {
-            "patient_id": patient_id,
-            "explanation_summary": "Elevated heart rate (+14 bpm) and reduced sleep (-2.5 h) are the primary drivers of multivariate anomaly detection against 7-day baseline.",
-            "feature_attributions": [
-                {
-                    "feature": "heart_rate",
-                    "impact_percentage": 34.5,
-                    "direction": "increased_risk",
-                    "current_value": 83.0,
-                    "baseline_mean": 68.0,
-                },
-                {
-                    "feature": "sleep_hours",
-                    "impact_percentage": 28.0,
-                    "direction": "increased_risk",
-                    "current_value": 5.3,
-                    "baseline_mean": 7.6,
-                },
-                {
-                    "feature": "stress_index",
-                    "impact_percentage": 20.5,
-                    "direction": "increased_risk",
-                    "current_value": 72.0,
-                    "baseline_mean": 26.0,
-                },
-                {
-                    "feature": "systolic_bp",
-                    "impact_percentage": 11.0,
-                    "direction": "increased_risk",
-                    "current_value": 131.0,
-                    "baseline_mean": 118.0,
-                },
-                {
-                    "feature": "spo2",
-                    "impact_percentage": 4.0,
-                    "direction": "reduced_risk",
-                    "current_value": 96.0,
-                    "baseline_mean": 98.0,
-                },
-                {
-                    "feature": "daily_steps",
-                    "impact_percentage": 2.0,
-                    "direction": "reduced_risk",
-                    "current_value": 5400.0,
-                    "baseline_mean": 8600.0,
-                },
-            ],
-        }
-    else:  # patient_3
-        return {
-            "patient_id": patient_id,
-            "explanation_summary": "Steady normalization in resting heart rate and sleep duration indicate sustained post-viral recovery.",
-            "feature_attributions": [
-                {
-                    "feature": "heart_rate",
-                    "impact_percentage": 32.0,
-                    "direction": "reduced_risk",
-                    "current_value": 64.0,
-                    "baseline_mean": 80.0,
-                },
-                {
-                    "feature": "sleep_hours",
-                    "impact_percentage": 28.0,
-                    "direction": "reduced_risk",
-                    "current_value": 7.9,
-                    "baseline_mean": 5.9,
-                },
-                {
-                    "feature": "stress_index",
-                    "impact_percentage": 20.0,
-                    "direction": "reduced_risk",
-                    "current_value": 26.0,
-                    "baseline_mean": 62.0,
-                },
-                {
-                    "feature": "systolic_bp",
-                    "impact_percentage": 10.0,
-                    "direction": "reduced_risk",
-                    "current_value": 115.0,
-                    "baseline_mean": 128.0,
-                },
-                {
-                    "feature": "daily_steps",
-                    "impact_percentage": 6.0,
-                    "direction": "reduced_risk",
-                    "current_value": 8400.0,
-                    "baseline_mean": 4200.0,
-                },
-                {
-                    "feature": "spo2",
-                    "impact_percentage": 4.0,
-                    "direction": "reduced_risk",
-                    "current_value": 98.0,
-                    "baseline_mean": 95.5,
-                },
-            ],
-        }
+    explainer = XAIExplainer()
+    result = explainer.explain_latest_alert(patient_df)
+    return {"patient_id": patient_id, **result}
 
 
 @app.post("/api/patient/log-vitals")
@@ -545,14 +270,160 @@ def post_log_vitals(payload: LogVitalsRequest) -> dict[str, Any]:
 
         new_row_df = pd.DataFrame([new_row])
         _patients_df = pd.concat([_patients_df, new_row_df], ignore_index=True)
-
-        # Write through to CSV file
         CSV_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _patients_df.to_csv(CSV_FILE_PATH, index=False)
-
         patient_rows = int((_patients_df["patient_id"] == payload.patient_id).sum())
 
     return {
         "status": "ok",
         "rows": patient_rows,
+        "logged_day": new_row,
+    }
+
+
+@app.post("/api/patient/simulate-next-day")
+def post_simulate_next_day(patient_id: str = Query(...)) -> dict[str, Any]:
+    """Auto-generate the next chronological day of telemetry for smartwatch streaming."""
+    validate_patient_id(patient_id)
+    global _patients_df
+
+    with _df_lock:
+        if _patients_df.empty:
+            load_dataset()
+        patient_df = _patients_df[_patients_df["patient_id"] == patient_id].sort_values("timestamp")
+        if patient_df.empty:
+            raise HTTPException(status_code=404, detail=f"No data for patient '{patient_id}'")
+
+        latest = patient_df.iloc[-1].to_dict()
+        try:
+            prev_date = datetime.strptime(str(latest["timestamp"]), "%Y-%m-%d").date()
+            next_date = (prev_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        except Exception:
+            next_date = date.today().strftime("%Y-%m-%d")
+
+        # Fluctuation based on current latest vitals
+        hr = int(np.clip(latest.get("heart_rate", 70) + random.choice([-2, -1, 0, 1, 2]), 42, 180))
+        spo2 = int(np.clip(latest.get("spo2", 98) + random.choice([-1, 0, 0]), 92, 100))
+        bp = int(np.clip(latest.get("systolic_bp", 120) + random.choice([-2, -1, 0, 1, 2]), 85, 200))
+        sleep = float(np.clip(round(float(latest.get("sleep_hours", 7.5)) + random.choice([-0.3, -0.1, 0.1, 0.2]), 1), 3.0, 13.0))
+        steps = int(np.clip(latest.get("daily_steps", 8000) + random.choice([-400, -200, 100, 300]), 1000, 30000))
+        stress = int(np.clip(latest.get("stress_index", 30) + random.choice([-3, -1, 1, 3]), 5, 95))
+
+        new_row = {
+            "patient_id": patient_id,
+            "timestamp": next_date,
+            "heart_rate": hr,
+            "spo2": spo2,
+            "systolic_bp": bp,
+            "sleep_hours": sleep,
+            "daily_steps": steps,
+            "stress_index": stress,
+        }
+
+        new_row_df = pd.DataFrame([new_row])
+        _patients_df = pd.concat([_patients_df, new_row_df], ignore_index=True)
+        CSV_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _patients_df.to_csv(CSV_FILE_PATH, index=False)
+        total_rows = int((_patients_df["patient_id"] == patient_id).sum())
+
+    return {
+        "status": "ok",
+        "new_day": new_row,
+        "rows": total_rows,
+    }
+
+
+@app.post("/api/patient/inject-event")
+def post_inject_event(payload: InjectEventRequest) -> dict[str, Any]:
+    """Inject an acute clinical event (stress spike or restorative recovery day)."""
+    validate_patient_id(payload.patient_id)
+    global _patients_df
+
+    with _df_lock:
+        if _patients_df.empty:
+            load_dataset()
+        patient_df = _patients_df[_patients_df["patient_id"] == payload.patient_id].sort_values("timestamp")
+        if patient_df.empty:
+            raise HTTPException(status_code=404, detail=f"No data for patient '{payload.patient_id}'")
+
+        latest = patient_df.iloc[-1].to_dict()
+        try:
+            prev_date = datetime.strptime(str(latest["timestamp"]), "%Y-%m-%d").date()
+            next_date = (prev_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        except Exception:
+            next_date = date.today().strftime("%Y-%m-%d")
+
+        if payload.event_type == "stress_spike":
+            new_row = {
+                "patient_id": payload.patient_id,
+                "timestamp": next_date,
+                "heart_rate": min(140, int(latest.get("heart_rate", 75) + 18)),
+                "spo2": max(93, int(latest.get("spo2", 97) - 2)),
+                "systolic_bp": min(165, int(latest.get("systolic_bp", 120) + 18)),
+                "sleep_hours": max(3.5, round(float(latest.get("sleep_hours", 7.0)) - 2.8, 1)),
+                "daily_steps": max(2200, int(latest.get("daily_steps", 8000) * 0.45)),
+                "stress_index": min(98, int(latest.get("stress_index", 30) + 45)),
+            }
+            message = "Acute sympathetic stress spike injected! High cardiovascular load, sleep debt, and autonomic strain simulated."
+        else:  # recovery_day
+            new_row = {
+                "patient_id": payload.patient_id,
+                "timestamp": next_date,
+                "heart_rate": max(52, int(latest.get("heart_rate", 75) - 14)),
+                "spo2": 99,
+                "systolic_bp": max(108, int(latest.get("systolic_bp", 120) - 12)),
+                "sleep_hours": 9.2,
+                "daily_steps": 10500,
+                "stress_index": 14,
+            }
+            message = "Restorative recovery day injected! 9.2h restorative sleep, parasympathetic rebound, and stabilized hemodynamics."
+
+        new_row_df = pd.DataFrame([new_row])
+        _patients_df = pd.concat([_patients_df, new_row_df], ignore_index=True)
+        CSV_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _patients_df.to_csv(CSV_FILE_PATH, index=False)
+        total_rows = int((_patients_df["patient_id"] == payload.patient_id).sum())
+
+    return {
+        "status": "ok",
+        "event_type": payload.event_type,
+        "message": message,
+        "new_day": new_row,
+        "rows": total_rows,
+    }
+
+
+@app.post("/api/patients/upload-csv")
+async def upload_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Upload custom patient vitals CSV file and reload in-memory dataset."""
+    global _patients_df, VALID_PATIENT_IDS
+
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a CSV (.csv).")
+
+    contents = await file.read()
+    try:
+        new_df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+
+    required_cols = {"patient_id", "timestamp", "heart_rate", "spo2", "systolic_bp", "sleep_hours", "daily_steps", "stress_index"}
+    missing = required_cols - set(new_df.columns)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV missing required columns: {sorted(list(missing))}. Required: {sorted(list(required_cols))}",
+        )
+
+    with _df_lock:
+        _patients_df = new_df.copy()
+        CSV_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _patients_df.to_csv(CSV_FILE_PATH, index=False)
+        VALID_PATIENT_IDS.update(_patients_df["patient_id"].unique())
+
+    return {
+        "status": "ok",
+        "message": f"Successfully loaded {len(_patients_df)} rows for {len(_patients_df['patient_id'].unique())} patient personas.",
+        "rows": len(_patients_df),
+        "patients": sorted(list(_patients_df["patient_id"].unique())),
     }

@@ -1,36 +1,147 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ResponsiveContainer,
   ComposedChart,
   Area,
   Line,
-  Scatter,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
   ReferenceArea,
+  ReferenceLine,
 } from 'recharts';
 import {
-  Heart,
-  Moon,
   Activity,
-  CheckCircle,
   AlertTriangle,
-  Siren,
-  TrendingUp,
-  TrendingDown,
-  Minus,
+  ArrowRight,
+  Clock,
+  Compass,
+  Footprints,
+  Heart,
+  Info,
+  Moon,
+  ShieldAlert,
   ShieldCheck,
+  TrendingDown,
+  TrendingUp,
   Zap,
 } from 'lucide-react';
 
-/**
- * Format timestamp 'YYYY-MM-DD' into 'Oct 12'
- */
+export const METRIC_CONFIGS = {
+  heart_rate: {
+    key: 'heart_rate',
+    title: 'Heart Rate',
+    unit: 'bpm',
+    icon: Heart,
+    staticCutoff: 100,
+    cutoffLabel: 'Hospital Tachycardia Cutoff (100 bpm)',
+    cutoffDirection: 'above',
+    fixedMissReason:
+      "Patient 2's resting HR drifted from 66 up to 83 bpm (+17 bpm increase!). Because 83 is below the fixed 100 bpm emergency threshold, standard wearables fail to alert. HealthTwin's AI caught it on Day 49 (+2.8σ drift).",
+    accent: {
+      text: 'text-rose-400',
+      border: 'border-rose-500/30',
+      bg: 'bg-rose-500/10',
+      stroke: '#f43f5e',
+      band: '#f43f5e',
+    },
+  },
+  spo2: {
+    key: 'spo2',
+    title: 'Oxygen Saturation (SpO₂)',
+    unit: '%',
+    icon: Activity,
+    staticCutoff: 95,
+    cutoffLabel: 'Clinical Hypoxemia Cutoff (95%)',
+    cutoffDirection: 'below',
+    fixedMissReason:
+      'Mild desaturation down to 95.5% looks acceptable to standard monitors, but when paired with rising heart rate and sleep loss, HealthTwin identifies early respiratory strain 4 days before acute symptoms.',
+    accent: {
+      text: 'text-cyan-400',
+      border: 'border-cyan-500/30',
+      bg: 'bg-cyan-500/10',
+      stroke: '#06b6d4',
+      band: '#06b6d4',
+    },
+  },
+  systolic_bp: {
+    key: 'systolic_bp',
+    title: 'Systolic Blood Pressure',
+    unit: 'mmHg',
+    icon: Compass,
+    staticCutoff: 130,
+    cutoffLabel: 'AHA Stage 1 Hypertension (130 mmHg)',
+    cutoffDirection: 'above',
+    fixedMissReason:
+      'Subtle vascular remodeling causes progressive baseline elevation. HealthTwin flags the trajectory before the patient enters sustained chronic hypertension.',
+    accent: {
+      text: 'text-amber-400',
+      border: 'border-amber-500/30',
+      bg: 'bg-amber-500/10',
+      stroke: '#f59e0b',
+      band: '#f59e0b',
+    },
+  },
+  sleep_hours: {
+    key: 'sleep_hours',
+    title: 'Sleep Duration',
+    unit: 'h',
+    icon: Moon,
+    staticCutoff: 6.0,
+    cutoffLabel: 'Generic Sleep Deprivation (6.0 h)',
+    cutoffDirection: 'below',
+    fixedMissReason:
+      'A drop from a personal 7.8h baseline to 5.2h is a 33% biological recovery deficit. Static health apps do not individualize sleep debt to athletic vs sedentary baselines.',
+    accent: {
+      text: 'text-indigo-400',
+      border: 'border-indigo-500/30',
+      bg: 'bg-indigo-500/10',
+      stroke: '#818cf8',
+      band: '#818cf8',
+    },
+  },
+  daily_steps: {
+    key: 'daily_steps',
+    title: 'Daily Steps',
+    unit: 'steps',
+    icon: Footprints,
+    staticCutoff: 5000,
+    cutoffLabel: 'Sedentary Population Line (5,000 steps)',
+    cutoffDirection: 'below',
+    fixedMissReason:
+      'For an active user accustomed to 13,800 daily steps, a sudden drop to 5,400 steps signals acute neuro-fatigue or viral lethargy days before overt symptoms appear.',
+    accent: {
+      text: 'text-emerald-400',
+      border: 'border-emerald-500/30',
+      bg: 'bg-emerald-500/10',
+      stroke: '#10b981',
+      band: '#10b981',
+    },
+  },
+  stress_index: {
+    key: 'stress_index',
+    title: 'Autonomic Stress Index',
+    unit: '/ 100',
+    icon: Zap,
+    staticCutoff: 65,
+    cutoffLabel: 'High Sympathetic Tone Threshold (65)',
+    cutoffDirection: 'above',
+    fixedMissReason:
+      'Gradual autonomic nervous tone escalation is invisible without rolling multivariate baseline modeling, linking poor sleep directly to sympathetic overdrive.',
+    accent: {
+      text: 'text-violet-400',
+      border: 'border-violet-500/30',
+      bg: 'bg-violet-500/10',
+      stroke: '#a78bfa',
+      band: '#a78bfa',
+    },
+  },
+};
+
 const formatTickDate = (val) => {
   if (!val) return '';
-  const parts = val.split('-');
+  const parts = String(val).split('-');
   if (parts.length === 3) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const m = parseInt(parts[1], 10) - 1;
@@ -40,16 +151,13 @@ const formatTickDate = (val) => {
   return val;
 };
 
-/**
- * Format full date for tooltip header
- */
 const formatTooltipDate = (val) => {
   if (!val) return '';
-  const parts = val.split('-');
+  const parts = String(val).split('-');
   if (parts.length === 3) {
     const months = [
       'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'July', 'August', 'September', 'October', 'November', 'December',
     ];
     const m = parseInt(parts[1], 10) - 1;
     const d = parseInt(parts[2], 10);
@@ -58,20 +166,6 @@ const formatTooltipDate = (val) => {
   return val;
 };
 
-/**
- * Compute 4 to 5 evenly spaced tick timestamps for the X-axis
- */
-const getXTicks = (data) => {
-  if (!data || data.length === 0) return [];
-  if (data.length <= 5) return data.map((d) => d.timestamp);
-  const count = 5;
-  const step = (data.length - 1) / (count - 1);
-  return Array.from({ length: count }, (_, i) => data[Math.round(i * step)].timestamp);
-};
-
-/**
- * Compute Y-axis zoomed domain (never starting at 0, padded 10%)
- */
 const getYDomain = (data, metricKey, minRange = 8) => {
   if (!data || data.length === 0) return ['auto', 'auto'];
   let min = Infinity;
@@ -90,6 +184,12 @@ const getYDomain = (data, metricKey, minRange = 8) => {
     });
   }
 
+  const staticVal = METRIC_CONFIGS[metricKey]?.staticCutoff;
+  if (typeof staticVal === 'number') {
+    if (staticVal < min) min = staticVal;
+    if (staticVal > max) max = staticVal;
+  }
+
   if (min === Infinity || max === -Infinity) return ['auto', 'auto'];
 
   let range = max - min;
@@ -100,15 +200,10 @@ const getYDomain = (data, metricKey, minRange = 8) => {
     range = minRange;
   }
 
-  const pad = Math.max(range * 0.1, 0.5);
+  const pad = Math.max(range * 0.12, 0.5);
   const isDecimal = metricKey === 'sleep_hours';
-  let dMin = min - pad;
+  let dMin = Math.max(0.5, min - pad);
   let dMax = max + pad;
-
-  // Never start at 0: ensure dMin is strictly > 0
-  if (dMin <= 0) {
-    dMin = Math.max(0.5, min * 0.85);
-  }
 
   if (isDecimal) {
     return [Math.floor(dMin * 10) / 10, Math.ceil(dMax * 10) / 10];
@@ -116,9 +211,6 @@ const getYDomain = (data, metricKey, minRange = 8) => {
   return [Math.floor(dMin), Math.ceil(dMax)];
 };
 
-/**
- * Extract contiguous stretches of flagged days for ReferenceArea
- */
 const getConsecutiveFlaggedRanges = (data) => {
   if (!data || data.length === 0) return [];
   const ranges = [];
@@ -145,708 +237,492 @@ const getConsecutiveFlaggedRanges = (data) => {
   return ranges;
 };
 
-/**
- * Custom SVG Anomaly Pulse Dot
- * Uses SVG-native <animate> on r (6 to 16) and opacity (0.6 to 0) with 1.8s duration.
- * Sits exactly on the line points at every window size.
- */
-const renderAnomalyPulseDot = (prefersReducedMotion) => (props) => {
-  const { cx, cy, payload } = props;
-  if (typeof cx !== 'number' || typeof cy !== 'number' || isNaN(cx) || isNaN(cy)) return null;
-  if (!payload || payload.anomaly_flag !== 1) return null;
+export default function BaselineCharts({
+  days = [],
+  activeMetric = 'heart_rate',
+  onMetricChange,
+  selectedDayIndex = null,
+  onSelectDayIndex,
+}) {
+  const [baselineMode, setBaselineMode] = useState('dynamic'); // 'dynamic' | 'static'
+  const isDynamic = baselineMode === 'dynamic';
 
-  return (
-    <g
-      key={`pulse-dot-${payload.timestamp}-${cx}-${cy}`}
-      style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-    >
-      {!prefersReducedMotion && (
-        <circle
-          cx={cx}
-          cy={cy}
-          r="6"
-          fill="#f43f5e"
-          fillOpacity="0.3"
-          stroke="#f43f5e"
-          strokeWidth="1.5"
-          opacity="0.6"
-        >
-          <animate
-            attributeName="r"
-            from="6"
-            to="16"
-            dur="1.8s"
-            repeatCount="indefinite"
-          />
-          <animate
-            attributeName="opacity"
-            from="0.6"
-            to="0"
-            dur="1.8s"
-            repeatCount="indefinite"
-          />
-        </circle>
-      )}
-      <circle
-        cx={cx}
-        cy={cy}
-        r="4.5"
-        fill="#f43f5e"
-        stroke="#0f172a"
-        strokeWidth="1.5"
-      />
-    </g>
-  );
-};
+  const cfg = METRIC_CONFIGS[activeMetric] || METRIC_CONFIGS.heart_rate;
+  const MetricIcon = cfg.icon;
 
-/**
- * Custom Dark Glassmorphism Tooltip
- */
-const CustomDarkTooltip = ({ active, payload, label, unit, metricName, metricTitle }) => {
-  if (!active || !payload || !payload.length) return null;
-  const data = payload[0]?.payload;
-  if (!data) return null;
-
-  const isAnomaly = data.anomaly_flag === 1;
-  const val = data[metricName];
-  const lower = data[`${metricName}_lower_band`];
-  const upper = data[`${metricName}_upper_band`];
-  const zscore = data[`${metricName}_zscore`];
-  const score = data.anomaly_score ?? 0;
-
-  // Determine z-score direction & color
-  const zIsPositive = typeof zscore === 'number' && zscore > 0;
-  const zAbs = typeof zscore === 'number' ? Math.abs(zscore) : 0;
-  const zColor = zAbs > 2.0 ? 'text-rose-400' : zAbs > 1.0 ? 'text-amber-400' : 'text-emerald-400';
-
-  return (
-    <div className="bg-slate-900/95 border border-white/10 rounded-xl p-3.5 shadow-2xl backdrop-blur-xl text-xs text-slate-200 min-w-[230px]">
-      {/* Date Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-        <span className="font-semibold text-slate-300">{formatTooltipDate(label)}</span>
-        {isAnomaly ? (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
-            Anomaly
-          </span>
-        ) : (
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-            Normal Band
-          </span>
-        )}
-      </div>
-
-      {/* Metric Content */}
-      <div className="mt-2.5 space-y-2">
-        <div className="flex justify-between items-baseline">
-          <span className="text-slate-400 font-medium">{metricTitle}:</span>
-          <span className="font-bold text-white text-sm font-mono">
-            {typeof val === 'number' ? val.toFixed(1) : val} {unit}
-          </span>
-        </div>
-
-        {lower !== undefined && upper !== undefined && (
-          <div className="flex justify-between items-center text-slate-400">
-            <span>Normal range:</span>
-            <span className="text-slate-300 font-mono text-[11px]">
-              {lower.toFixed(1)} – {upper.toFixed(1)} {unit}
-            </span>
-          </div>
-        )}
-
-        {typeof zscore === 'number' && (
-          <div className="flex justify-between items-center text-slate-400">
-            <span>Z-Score:</span>
-            <span className={`font-mono font-semibold flex items-center gap-0.5 ${zColor}`}>
-              {zIsPositive ? '↑' : '↓'} {zscore > 0 ? `+${zscore.toFixed(2)}` : zscore.toFixed(2)}σ
-            </span>
-          </div>
-        )}
-
-        {/* Flagged Tag */}
-        {isAnomaly && (
-          <div className="mt-2 pt-2 border-t border-rose-500/20 flex justify-between items-center bg-rose-500/10 -mx-3.5 -mb-3.5 p-2.5 rounded-b-xl">
-            <span className="text-rose-300 font-semibold text-[11px] flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              Flagged by IForest
-            </span>
-            <span className="text-rose-200 font-mono font-bold text-xs">
-              {score.toFixed(1)} / 100
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-/**
- * Semicircular SVG Anomaly Score Gauge (0 to 100)
- */
-const SemicircleGauge = ({ score = 0 }) => {
-  const clamped = Math.max(0, Math.min(100, score));
-  // Semicircle radius R = 36, center = (48, 44), arc length = pi * 36 ≈ 113.1
-  const R = 36;
-  const arcLength = Math.PI * R;
-  const strokeDashoffset = arcLength * (1 - clamped / 100);
-
-  // Color selection
-  let strokeColor = '#10b981'; // emerald
-  let textColor = 'text-emerald-400';
-  let glowColor = 'rgba(16, 185, 129, 0.4)';
-  if (clamped >= 70) {
-    strokeColor = '#f43f5e'; // rose
-    textColor = 'text-rose-400';
-    glowColor = 'rgba(244, 63, 94, 0.5)';
-  } else if (clamped >= 40) {
-    strokeColor = '#f59e0b'; // amber
-    textColor = 'text-amber-400';
-    glowColor = 'rgba(245, 158, 11, 0.4)';
-  }
-
-  return (
-    <div className="relative flex flex-col items-center justify-center">
-      <svg width="96" height="54" viewBox="0 0 96 54" className="overflow-visible">
-        {/* Background Track */}
-        <path
-          d="M 12 46 A 36 36 0 0 1 84 46"
-          fill="none"
-          stroke="#1e293b"
-          strokeWidth="7"
-          strokeLinecap="round"
-        />
-        {/* Animated Filled Score Arc */}
-        <path
-          d="M 12 46 A 36 36 0 0 1 84 46"
-          fill="none"
-          stroke={strokeColor}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeDasharray={arcLength}
-          strokeDashoffset={strokeDashoffset}
-          style={{
-            transition: 'stroke-dashoffset 0.9s ease-out, stroke 0.3s ease',
-            filter: `drop-shadow(0 0 6px ${glowColor})`,
-          }}
-        />
-      </svg>
-      {/* Centered Score Readout */}
-      <div className="absolute top-4 flex flex-col items-center pointer-events-none">
-        <span className={`text-base font-extrabold font-mono leading-none ${textColor}`}>
-          {clamped.toFixed(1)}
-        </span>
-        <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold mt-0.5">
-          Score / 100
-        </span>
-      </div>
-    </div>
-  );
-};
-
-/**
- * Metric Card with ComposedChart, Zoomed Y-Domain, and Sparkline
- */
-const VitalMetricCard = ({
-  title,
-  icon: Icon,
-  metricKey,
-  unit,
-  accentColor,
-  fillColor,
-  days,
-  prefersReducedMotion,
-}) => {
-  const yDomain = getYDomain(days, metricKey, metricKey === 'sleep_hours' ? 3 : 12);
-  const xTicks = getXTicks(days);
+  const yDomain = getYDomain(days, cfg.key, cfg.key === 'sleep_hours' ? 3 : 10);
   const flaggedRanges = getConsecutiveFlaggedRanges(days);
 
-  // Recharts natively supports array range [lower, upper] for Area!
-  // This avoids stackId which previously forced baseline to 0.
-  const chartData = days.map((item) => {
-    const lower = item[`${metricKey}_lower_band`] ?? item[metricKey] * 0.9;
-    const upper = item[`${metricKey}_upper_band`] ?? item[metricKey] * 1.1;
+  const chartData = days.map((item, idx) => {
+    const lower = item[`${cfg.key}_lower_band`] ?? item[cfg.key] * 0.94;
+    const upper = item[`${cfg.key}_upper_band`] ?? item[cfg.key] * 1.06;
     return {
       ...item,
+      dayIndex: idx,
       band_range: [lower, upper],
     };
   });
 
-  const latest = days[days.length - 1] || {};
-  const latestVal = latest[metricKey];
-  const latestZ = latest[`${metricKey}_zscore`];
+  const selectedIdx = selectedDayIndex !== null && selectedDayIndex >= 0 && selectedDayIndex < days.length
+    ? selectedDayIndex
+    : Math.max(0, days.length - 1);
+  const selectedDay = days[selectedIdx] || days[days.length - 1] || {};
 
-  // Delta chip direction & style
-  const zAbs = typeof latestZ === 'number' ? Math.abs(latestZ) : 0;
-  const chipColor =
-    zAbs > 2.0
-      ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
-      : zAbs > 1.0
-      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-      : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300';
-
-  return (
-    <div
-      aria-label={`${title} physiological baseline chart`}
-      className="bg-slate-900/60 border border-white/10 rounded-2xl p-4 shadow-xl backdrop-blur-md flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20"
-    >
-      {/* Card Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-xl border ${accentColor.bg} ${accentColor.border} ${accentColor.text}`}>
-            <Icon className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="font-semibold text-slate-100 text-sm tracking-wide">{title}</h4>
-            <span className="text-[11px] text-slate-400 block font-medium">Personal Baseline (±2σ)</span>
-          </div>
-        </div>
-
-        {/* Current Value & Delta Chip */}
-        <div className="text-right">
-          <div className="flex items-baseline justify-end gap-1">
-            <span className="text-xl font-extrabold font-mono text-white">
-              {typeof latestVal === 'number' ? latestVal.toFixed(1) : latestVal}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">{unit}</span>
-          </div>
-          {typeof latestZ === 'number' && (
-            <span className={`inline-block px-2 py-0.5 mt-1 rounded-md text-[10px] font-mono font-semibold border ${chipColor}`}>
-              {latestZ > 0 ? `+${latestZ.toFixed(1)}` : latestZ.toFixed(1)}σ vs normal
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Main ComposedChart Canvas (min 240px) */}
-      <div className="w-full h-[240px] mt-1 relative">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 12, right: 12, left: -16, bottom: 0 }}
-          >
-            <defs>
-              {/* Subtle glow filter on observed line */}
-              <filter id={`glow-${metricKey}`} x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={fillColor} floodOpacity="0.35" />
-              </filter>
-            </defs>
-
-            {/* Faint Horizontal Grid Lines, Vertical Removed */}
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="#334155"
-              opacity={0.25}
-              vertical={false}
-            />
-
-            {/* Consecutive Anomaly Highlight Bands (ReferenceArea behind lines) */}
-            {flaggedRanges.map((range, idx) => (
-              <ReferenceArea
-                key={`ref-area-${idx}`}
-                x1={range.start}
-                x2={range.end}
-                fill="#f43f5e"
-                fillOpacity={0.08}
-                stroke="none"
-                ifOverflow="extendDomain"
-              />
-            ))}
-
-            {/* X-Axis: 4-5 ticks only, formatted as 'Oct 12' */}
-            <XAxis
-              dataKey="timestamp"
-              stroke="#64748b"
-              fontSize={10}
-              tickLine={false}
-              ticks={xTicks}
-              tickFormatter={formatTickDate}
-            />
-
-            {/* Y-Axis: Strictly zoomed domain, never 0 */}
-            <YAxis
-              stroke="#64748b"
-              fontSize={10}
-              tickLine={false}
-              domain={yDomain}
-            />
-
-            {/* Custom Dark Tooltip */}
-            <Tooltip
-              content={
-                <CustomDarkTooltip
-                  unit={unit}
-                  metricName={metricKey}
-                  metricTitle={title}
-                />
-              }
-            />
-
-            {/* Shaded Normal Band (Direct Range Area - No stackId, strictly preserves zoomed domain) */}
-            <Area
-              type="monotone"
-              name="Normal range"
-              dataKey="band_range"
-              stroke="none"
-              fill={fillColor}
-              fillOpacity={0.18}
-              isAnimationActive={true}
-              animationDuration={900}
-              animationEasing="ease-out"
-            />
-
-            {/* Thin dashed upper and lower edge boundaries */}
-            <Line
-              type="monotone"
-              dataKey={`${metricKey}_lower_band`}
-              stroke={fillColor}
-              strokeDasharray="3 3"
-              strokeWidth={1}
-              strokeOpacity={0.4}
-              dot={false}
-              isAnimationActive={true}
-              animationDuration={900}
-              animationEasing="ease-out"
-              legendType="none"
-              tooltipType="none"
-            />
-            <Line
-              type="monotone"
-              dataKey={`${metricKey}_upper_band`}
-              stroke={fillColor}
-              strokeDasharray="3 3"
-              strokeWidth={1}
-              strokeOpacity={0.4}
-              dot={false}
-              isAnimationActive={true}
-              animationDuration={900}
-              animationEasing="ease-out"
-              legendType="none"
-              tooltipType="none"
-            />
-
-            {/* Value Line: 2.5px monotone with subtle glow & no normal markers */}
-            <Line
-              type="monotone"
-              name="Observed"
-              dataKey={metricKey}
-              stroke={fillColor}
-              strokeWidth={2.5}
-              dot={false}
-              activeDot={{
-                r: 4.5,
-                fill: '#0f172a',
-                stroke: fillColor,
-                strokeWidth: 2,
-              }}
-              style={{ filter: `url(#glow-${metricKey})` }}
-              isAnimationActive={true}
-              animationDuration={900}
-              animationEasing="ease-out"
-            />
-
-            {/* Custom SVG Anomaly Pulse Scatter Dot (Sits precisely on line points) */}
-            <Scatter
-              dataKey={metricKey}
-              shape={renderAnomalyPulseDot(prefersReducedMotion)}
-              isAnimationActive={false}
-              legendType="none"
-              tooltipType="none"
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Mini Legend & Sparkline Footer */}
-      <div className="pt-3 border-t border-slate-800/80 mt-2 flex items-center justify-between">
-        <div className="flex items-center gap-3 text-[11px] text-slate-400">
-          <div className="flex items-center gap-1.5">
-            <span
-              className="w-3 h-2 rounded-xs inline-block"
-              style={{ backgroundColor: fillColor, opacity: 0.25 }}
-            ></span>
-            <span>Normal range</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: fillColor }}></span>
-            <span>Observed</span>
-          </div>
-        </div>
-
-        {/* Tiny Sparkline of Anomaly Score */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-slate-400 font-mono">Drift Radar:</span>
-          <svg width="48" height="14" className="overflow-visible">
-            {(() => {
-              const pts = days.map((d, i) => {
-                const x = (i / Math.max(days.length - 1, 1)) * 48;
-                const score = d.anomaly_score ?? 0;
-                const y = 14 - (score / 100) * 12;
-                return `${x.toFixed(1)},${y.toFixed(1)}`;
-              });
-              return (
-                <polyline
-                  fill="none"
-                  stroke="#f43f5e"
-                  strokeWidth="1.2"
-                  points={pts.join(' ')}
-                />
-              );
-            })()}
-          </svg>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
- * Skeleton shimmer cards for undefined / loading state
- */
-const SkeletonLoader = () => (
-  <div className="w-full space-y-5 animate-pulse" aria-busy="true" aria-label="Loading baseline telemetry">
-    <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5 h-24"></div>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 h-12"></div>
-      <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 h-12"></div>
-      <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 h-12"></div>
-    </div>
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-      <div className="bg-slate-900/60 border border-white/10 rounded-2xl h-80"></div>
-      <div className="bg-slate-900/60 border border-white/10 rounded-2xl h-80"></div>
-      <div className="bg-slate-900/60 border border-white/10 rounded-2xl h-80"></div>
-    </div>
-  </div>
-);
-
-/**
- * Clean Empty State Card
- */
-const EmptyState = () => (
-  <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-12 text-center text-slate-400 shadow-2xl backdrop-blur-md">
-    <div className="w-14 h-14 mx-auto mb-3.5 rounded-2xl bg-slate-800/70 border border-slate-700/60 flex items-center justify-center text-slate-400">
-      <ShieldCheck className="w-7 h-7 text-cyan-400 opacity-80" />
-    </div>
-    <h3 className="text-base font-semibold text-slate-200">No monitoring data yet</h3>
-    <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-      Select an active patient or start telemetry ingestion to generate personal baseline reference bands and unsupervised anomaly scoring.
-    </p>
-  </div>
-);
-
-/**
- * Main BaselineCharts Component
- * Accepts `days` array and renders three multivariate baseline charts.
- */
-export default function BaselineCharts({ days }) {
-  // Respect prefers-reduced-motion
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-      setPrefersReducedMotion(mediaQuery.matches);
-      const handler = (e) => setPrefersReducedMotion(e.matches);
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
-    }
-  }, []);
-
-  // Loading state (days is undefined)
-  if (days === undefined) {
-    return <SkeletonLoader />;
-  }
-
-  // Empty state (days is an empty array)
-  if (!Array.isArray(days) || days.length === 0) {
-    return <EmptyState />;
-  }
-
-  // Latest day & stats
-  const latestDay = days[days.length - 1] || {};
-  const anomalyScore = latestDay.anomaly_score ?? 0;
-  const severityLabel =
-    latestDay.severity_label ||
-    (anomalyScore >= 70
-      ? 'Critical Multivariate Anomaly'
-      : anomalyScore >= 40
-      ? 'Moderate Pattern Drift'
-      : 'Normal');
-
-  // Badge configuration with gentle glow
-  const getBadgeConfig = (label) => {
-    switch (label) {
-      case 'Critical Multivariate Anomaly':
-        return {
-          bg: 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_20px_rgba(244,63,94,0.3)]',
-          dot: 'bg-rose-500',
-          icon: Siren,
-        };
-      case 'Moderate Pattern Drift':
-        return {
-          bg: 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.25)]',
-          dot: 'bg-amber-500',
-          icon: AlertTriangle,
-        };
-      case 'Normal':
-      default:
-        return {
-          bg: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.2)]',
-          dot: 'bg-emerald-500',
-          icon: CheckCircle,
-        };
+  const handleChartClick = (e) => {
+    if (e && e.activePayload && e.activePayload.length > 0) {
+      const clickedData = e.activePayload[0].payload;
+      if (typeof clickedData.dayIndex === 'number') {
+        onSelectDayIndex?.(clickedData.dayIndex);
+      }
     }
   };
 
-  const badge = getBadgeConfig(severityLabel);
-  const BadgeIcon = badge.icon;
-
-  // Stat chips metrics
-  const flaggedDaysCount = days.filter((d) => d.anomaly_flag === 1).length;
-  const peakScore = Math.max(...days.map((d) => d.anomaly_score ?? 0), 0);
-
-  // Trend from last 5 scores
-  const last5 = days.slice(-5);
-  const firstScore = last5[0]?.anomaly_score ?? 0;
-  const lastScore = last5[last5.length - 1]?.anomaly_score ?? 0;
-  const scoreDiff = lastScore - firstScore;
-
-  let trendLabel = 'Stable';
-  let TrendIcon = Minus;
-  let trendColor = 'text-slate-400';
-
-  if (scoreDiff > 3.0) {
-    trendLabel = 'Rising';
-    TrendIcon = TrendingUp;
-    trendColor = 'text-rose-400';
-  } else if (scoreDiff < -3.0) {
-    trendLabel = 'Falling';
-    TrendIcon = TrendingDown;
-    trendColor = 'text-emerald-400';
-  }
+  const stabilityScore = selectedDay.baseline_stability_score ?? 88;
+  const driftVelocity = selectedDay.drift_velocity ?? 0.0;
+  const modelAgreement = selectedDay.model_agreement ?? '3/3 Models Agree';
 
   return (
-    <div className="w-full space-y-5">
-      {/* Header Card */}
-      <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5 md:p-6 shadow-2xl backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all duration-200 hover:border-white/15">
-        <div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h3 className="text-lg md:text-xl font-bold text-white tracking-tight">
-              Personalized Baseline & Anomaly Radar
-            </h3>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-medium bg-slate-800/80 text-slate-300 border border-slate-700/60">
-              {days.length}-Day Rolling
+    <div className="space-y-4" aria-label="Personalized Clinical Baseline Dashboard">
+      {/* Top Controls: 6 Vitals Tabs + Static/Dynamic Toggle */}
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/90 p-4 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Vital Tabs */}
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Select Biometric Vital">
+            {Object.values(METRIC_CONFIGS).map((item) => {
+              const isActive = item.key === activeMetric;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.key}
+                  role="tab"
+                  aria-selected={isActive}
+                  type="button"
+                  onClick={() => onMetricChange?.(item.key)}
+                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                    isActive
+                      ? 'border-cyan-400 bg-cyan-500/20 text-white shadow-[0_0_15px_rgba(6,182,212,0.25)]'
+                      : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{item.title}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Static vs Dynamic Baseline Toggle */}
+          <div className="flex items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-950/80 p-1">
+            <button
+              type="button"
+              onClick={() => setBaselineMode('dynamic')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                isDynamic
+                  ? 'bg-cyan-500 text-slate-950 shadow-md font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>HealthTwin AI (±2σ)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setBaselineMode('static')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                !isDynamic
+                  ? 'bg-rose-500 text-white shadow-md font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+              <span>Traditional Fixed</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic vs Static Educational Callout Banner */}
+        {!isDynamic ? (
+          <div className="flex items-start gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200 animate-fadeIn">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+            <div>
+              <p className="font-semibold text-rose-300">
+                Traditional Fixed Cutoff: {cfg.cutoffLabel}
+              </p>
+              <p className="mt-0.5 text-slate-300 leading-relaxed">{cfg.fixedMissReason}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-cyan-200 animate-fadeIn">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+            <div>
+              <p className="font-semibold text-cyan-200">
+                HealthTwin Personalized Rolling Baselines (7-day Acute Band & 30-day Chronic Mean)
+              </p>
+              <p className="mt-0.5 text-slate-300 leading-relaxed">
+                Multivariate PyOD ensemble (IForest + ECOD + COPOD) models individual baseline distributions.
+                Catches gradual drift days before generic population cutoffs trigger alarms.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* 90-Day Timeline Scrubber Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-cyan-400" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+              Timeline Scrubber:
+            </span>
+            <span className="rounded-md border border-cyan-400/30 bg-cyan-950/60 px-2 py-0.5 font-mono text-xs font-bold text-cyan-200">
+              Day {selectedIdx + 1} of {days.length} ({selectedDay.timestamp ?? '–'})
+            </span>
+            {selectedIdx < days.length - 1 && (
+              <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/30 animate-pulse">
+                Historical View
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={selectedIdx <= 0}
+              onClick={() => onSelectDayIndex?.(0)}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-40"
+            >
+              ⏮ Day 1
+            </button>
+            <button
+              type="button"
+              disabled={selectedIdx < 30}
+              onClick={() => onSelectDayIndex?.(29)}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-40"
+            >
+              Day 30
+            </button>
+            <button
+              type="button"
+              disabled={selectedIdx < 60}
+              onClick={() => onSelectDayIndex?.(59)}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-40"
+            >
+              Day 60
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, days.length - 1)}
+              value={selectedIdx}
+              onChange={(e) => onSelectDayIndex?.(Number(e.target.value))}
+              className="slider w-28 sm:w-44"
+              style={{ '--fill': `${(selectedIdx / Math.max(1, days.length - 1)) * 100}%` }}
+              aria-label="Scrub through 90-day history"
+            />
+            <button
+              type="button"
+              disabled={selectedIdx >= days.length - 1}
+              onClick={() => onSelectDayIndex?.(days.length - 1)}
+              className="rounded-lg border border-cyan-400/40 bg-cyan-950/60 px-2 py-1 text-[11px] font-bold text-cyan-200 transition hover:bg-cyan-900 disabled:opacity-40"
+            >
+              Live ⏭
+            </button>
+          </div>
+        </div>
+
+        {/* Analytics Diagnostic Strip: Stability Score, Drift Velocity, Model Agreement */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 border-t border-slate-800/80 pt-2 text-[11px]">
+          <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2">
+            <span className="text-slate-400 block text-[10px]">Baseline Stability</span>
+            <span className="font-mono font-bold text-cyan-300">{stabilityScore} / 100</span>
+          </div>
+          <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2">
+            <span className="text-slate-400 block text-[10px]">Drift Velocity</span>
+            <span className={`font-mono font-bold ${driftVelocity > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {driftVelocity > 0 ? `+${driftVelocity}` : driftVelocity} pts/day
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
-            PyOD Isolation Forest scoring individual physiological drift against calibrated reference normal bands (±2σ).
-          </p>
-        </div>
-
-        {/* Right Section: Semicircular Gauge & Severity Badge */}
-        <div className="flex items-center gap-4 self-start md:self-auto shrink-0">
-          {/* Animated Semicircular Arc Gauge */}
-          <SemicircleGauge score={anomalyScore} />
-
-          {/* Severity Badge */}
-          <div
-            role="status"
-            className={`px-3.5 py-2.5 rounded-xl border flex items-center gap-2.5 font-semibold text-xs tracking-wide transition-all duration-300 ${badge.bg}`}
-          >
-            <BadgeIcon className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">{severityLabel}</span>
+          <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2">
+            <span className="text-slate-400 block text-[10px]">PyOD Agreement</span>
+            <span className="font-mono font-semibold text-slate-200">{modelAgreement}</span>
+          </div>
+          <div className="rounded-lg border border-slate-800/80 bg-slate-950/60 p-2">
+            <span className="text-slate-400 block text-[10px]">Pattern Archetype</span>
+            <span className="font-semibold text-amber-300 truncate block">
+              {selectedDay.pattern_type || 'Stable Baseline'}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Summary Row of Three Stat Chips */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {/* Chip 1: Flagged Days */}
-        <div className="bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-md backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                flaggedDaysCount > 0 ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
-              }`}
-            ></span>
-            <span className="text-xs text-slate-400 font-medium">Flagged Days</span>
+      {/* Main Large Chart Canvas */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5 shadow-2xl backdrop-blur-md">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl border ${cfg.accent.bg} ${cfg.accent.border} ${cfg.accent.text}`}>
+              <MetricIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-white">{cfg.title}</h3>
+                <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+                  Click any point to travel in time
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                {isDynamic ? 'Observed vitals vs personalized ±2σ normal band' : `Observed vitals vs ${cfg.cutoffLabel}`}
+              </p>
+            </div>
           </div>
-          <span className="text-sm font-bold font-mono text-white">
-            {flaggedDaysCount} <span className="text-xs text-slate-400 font-normal">of {days.length}</span>
-          </span>
+
+          {/* Selected day value */}
+          <div className="text-right">
+            <div className="flex items-baseline justify-end gap-1.5">
+              <span className="font-mono text-2xl font-bold text-white">
+                {typeof selectedDay[cfg.key] === 'number'
+                  ? selectedDay[cfg.key].toFixed(cfg.key === 'sleep_hours' ? 1 : 0)
+                  : selectedDay[cfg.key] ?? '–'}
+              </span>
+              <span className="text-xs text-slate-400">{cfg.unit}</span>
+            </div>
+            {typeof selectedDay[`${cfg.key}_zscore`] === 'number' && (
+              <span
+                className={`inline-block mt-0.5 rounded px-2 py-0.5 text-[10px] font-mono font-bold border ${
+                  Math.abs(selectedDay[`${cfg.key}_zscore`]) > 2
+                    ? 'border-rose-500/40 bg-rose-500/20 text-rose-300'
+                    : 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300'
+                }`}
+              >
+                {selectedDay[`${cfg.key}_zscore`] > 0 ? '+' : ''}
+                {selectedDay[`${cfg.key}_zscore`].toFixed(2)}σ from baseline
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Chip 2: Peak Score */}
-        <div className="bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-md backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-amber-400" />
-            <span className="text-xs text-slate-400 font-medium">Peak Score</span>
-          </div>
-          <span className="text-sm font-bold font-mono text-slate-200">
-            {peakScore.toFixed(1)} <span className="text-xs text-slate-400 font-normal">/ 100</span>
-          </span>
+        {/* Chart View */}
+        <div className="mt-4 h-[320px] w-full relative">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={chartData}
+              onClick={handleChartClick}
+              margin={{ top: 15, right: 15, left: -10, bottom: 0 }}
+            >
+              <defs>
+                <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={cfg.accent.stroke} floodOpacity="0.4" />
+                </filter>
+              </defs>
+
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.25} vertical={false} />
+
+              {/* Consecutive anomaly highlight bands */}
+              {flaggedRanges.map((range, idx) => (
+                <ReferenceArea
+                  key={`flagged-${idx}`}
+                  x1={range.start}
+                  x2={range.end}
+                  fill="#f43f5e"
+                  fillOpacity={0.09}
+                  stroke="none"
+                />
+              ))}
+
+              {/* Static Cutoff Reference Line if Static Mode */}
+              {!isDynamic && (
+                <ReferenceLine
+                  y={cfg.staticCutoff}
+                  stroke="#f43f5e"
+                  strokeDasharray="5 5"
+                  strokeWidth={2}
+                  label={{
+                    value: cfg.cutoffLabel,
+                    fill: '#f87171',
+                    fontSize: 11,
+                    position: 'insideTopRight',
+                  }}
+                />
+              )}
+
+              {/* Active Scrubber Selected Day Vertical Reference Line */}
+              {selectedDay.timestamp && (
+                <ReferenceLine
+                  x={selectedDay.timestamp}
+                  stroke="#67e8f9"
+                  strokeWidth={2}
+                  strokeDasharray="3 3"
+                  label={{
+                    value: `Day ${selectedIdx + 1}`,
+                    fill: '#67e8f9',
+                    fontSize: 10,
+                    position: 'top',
+                  }}
+                />
+              )}
+
+              <XAxis
+                dataKey="timestamp"
+                tickFormatter={formatTickDate}
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                axisLine={{ stroke: '#334155' }}
+                tickLine={{ stroke: '#334155' }}
+              />
+
+              <YAxis
+                domain={yDomain}
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
+                axisLine={{ stroke: '#334155' }}
+                tickLine={{ stroke: '#334155' }}
+                unit={` ${cfg.unit}`}
+              />
+
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (!active || !payload || !payload.length) return null;
+                  const d = payload[0]?.payload;
+                  if (!d) return null;
+                  const isFlagged = d.anomaly_flag === 1;
+                  const z = d[`${cfg.key}_zscore`];
+                  const lower = d[`${cfg.key}_lower_band`];
+                  const upper = d[`${cfg.key}_upper_band`];
+
+                  return (
+                    <div className="rounded-xl border border-white/10 bg-slate-900/95 p-3 text-xs text-slate-200 shadow-2xl backdrop-blur-md">
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-1.5">
+                        <span className="font-semibold text-white">{formatTooltipDate(label)}</span>
+                        {isFlagged ? (
+                          <span className="rounded-full border border-rose-500/40 bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
+                            Drift Flagged
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                            Normal
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        <div className="flex justify-between gap-4 font-medium">
+                          <span className="text-slate-400">{cfg.title}:</span>
+                          <span className="font-mono font-bold text-white">
+                            {d[cfg.key]} {cfg.unit}
+                          </span>
+                        </div>
+                        {isDynamic && lower !== undefined && upper !== undefined && (
+                          <div className="flex justify-between gap-4 text-[11px] text-slate-400">
+                            <span>±2σ Normal Band:</span>
+                            <span className="font-mono text-slate-300">
+                              {Number(lower).toFixed(1)} – {Number(upper).toFixed(1)} {cfg.unit}
+                            </span>
+                          </div>
+                        )}
+                        {!isDynamic && (
+                          <div className="flex justify-between gap-4 text-[11px] text-rose-300">
+                            <span>Fixed Population Cutoff:</span>
+                            <span className="font-mono font-bold">
+                              {cfg.staticCutoff} {cfg.unit}
+                            </span>
+                          </div>
+                        )}
+                        {typeof z === 'number' && (
+                          <div className="flex justify-between gap-4 text-[11px] text-slate-400">
+                            <span>Personal Z-Score:</span>
+                            <span className="font-mono font-semibold text-cyan-300">
+                              {z > 0 ? `+${z.toFixed(2)}` : z.toFixed(2)}σ
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+
+              {/* Dynamic Baseline Rolling Band (±2σ) */}
+              {isDynamic && (
+                <Area
+                  dataKey="band_range"
+                  fill={cfg.accent.band}
+                  fillOpacity={0.14}
+                  stroke={cfg.accent.stroke}
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.45}
+                  name="Personal Baseline Band"
+                />
+              )}
+
+              {/* 7-day Rolling Mean Line */}
+              {isDynamic && (
+                <Line
+                  type="monotone"
+                  dataKey={`${cfg.key}_mean`}
+                  stroke={cfg.accent.stroke}
+                  strokeWidth={1.5}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  name="7-day Mean"
+                  opacity={0.65}
+                />
+              )}
+
+              {/* 30-day Chronic Baseline Line */}
+              {isDynamic && (
+                <Line
+                  type="monotone"
+                  dataKey={`${cfg.key}_mean_30d`}
+                  stroke="#94a3b8"
+                  strokeWidth={1.2}
+                  strokeDasharray="2 2"
+                  dot={false}
+                  name="30-day Chronic Homeostasis"
+                  opacity={0.5}
+                />
+              )}
+
+              {/* Observed Metric Line */}
+              <Line
+                type="monotone"
+                dataKey={cfg.key}
+                stroke={cfg.accent.stroke}
+                strokeWidth={2.8}
+                filter="url(#lineGlow)"
+                dot={(props) => {
+                  const { cx, cy, payload } = props;
+                  if (!payload) return null;
+                  const isSelected = payload.dayIndex === selectedIdx;
+                  const isAnomaly = payload.anomaly_flag === 1;
+
+                  return (
+                    <g key={`dot-${payload.timestamp}`}>
+                      {isSelected && (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={9}
+                          fill="none"
+                          stroke="#67e8f9"
+                          strokeWidth={2.5}
+                          className="animate-ping"
+                        />
+                      )}
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={isSelected ? 6 : isAnomaly ? 5 : 3.5}
+                        fill={isSelected ? '#67e8f9' : isAnomaly ? '#f43f5e' : cfg.accent.stroke}
+                        stroke="#0f172a"
+                        strokeWidth={1.8}
+                        className="cursor-pointer transition-transform hover:scale-150"
+                      />
+                    </g>
+                  );
+                }}
+                activeDot={{ r: 7, stroke: '#ffffff', strokeWidth: 2, fill: cfg.accent.stroke }}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
-
-        {/* Chip 3: Anomaly Trend */}
-        <div className="bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-md backdrop-blur-md">
-          <div className="flex items-center gap-2">
-            <TrendIcon className={`w-4 h-4 ${trendColor}`} />
-            <span className="text-xs text-slate-400 font-medium">5-Day Trend</span>
-          </div>
-          <span className={`text-sm font-bold font-mono flex items-center gap-1 ${trendColor}`}>
-            {trendLabel}
-          </span>
-        </div>
-      </div>
-
-      {/* Grid of 3 Vital ComposedCharts (3 cols on lg, 1 col on mobile) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* 1. Heart Rate */}
-        <VitalMetricCard
-          title="Heart Rate"
-          icon={Heart}
-          metricKey="heart_rate"
-          unit="bpm"
-          accentColor={{
-            bg: 'bg-rose-500/10',
-            border: 'border-rose-500/20',
-            text: 'text-rose-400',
-          }}
-          fillColor="#f43f5e"
-          days={days}
-          prefersReducedMotion={prefersReducedMotion}
-        />
-
-        {/* 2. Sleep Hours */}
-        <VitalMetricCard
-          title="Sleep Rest"
-          icon={Moon}
-          metricKey="sleep_hours"
-          unit="hrs"
-          accentColor={{
-            bg: 'bg-indigo-500/10',
-            border: 'border-indigo-500/20',
-            text: 'text-indigo-400',
-          }}
-          fillColor="#6366f1"
-          days={days}
-          prefersReducedMotion={prefersReducedMotion}
-        />
-
-        {/* 3. Systolic Blood Pressure */}
-        <VitalMetricCard
-          title="Systolic BP"
-          icon={Activity}
-          metricKey="systolic_bp"
-          unit="mmHg"
-          accentColor={{
-            bg: 'bg-amber-500/10',
-            border: 'border-amber-500/20',
-            text: 'text-amber-400',
-          }}
-          fillColor="#f59e0b"
-          days={days}
-          prefersReducedMotion={prefersReducedMotion}
-        />
       </div>
     </div>
   );

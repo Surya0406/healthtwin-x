@@ -1,0 +1,122 @@
+[
+  {
+    "patient_id": "patient_1",
+    "name": "Alex Mercer",
+    "age": 28,
+    "gender": "Male",
+    "archetype": "Endurance Athlete",
+    "chronological_age": 28,
+    "baseline_profile": "High aerobic capacity, vagal dominance, low resting HR (52 bpm), stable baseline.",
+    "clinical_summary": "Elite triathlete with exceptional autonomic regulation, low biological noise, and high cardiovascular resilience."
+  },
+  {
+    "patient_id": "patient_2",
+    "name": "Marcus Vance",
+    "age": 42,
+    "gender": "Male",
+    "archetype": "Corporate Autonomic Strain",
+    "chronological_age": 42,
+    "baseline_profile": "Stable for days 1-45; progressive sleep debt and sympathetic escalation days 46-90.",
+    "clinical_summary": "Senior executive experiencing chronic workplace stress, gradual resting tachycardia (+14 bpm), and systolic blood pressure elevation."
+  },
+  {
+    "patient_id": "patient_3",
+    "name": "Elena Rostova",
+    "age": 34,
+    "gender": "Female",
+    "archetype": "Post-Viral Recovery",
+    "chronological_age": 34,
+    "baseline_profile": "Acute post-viral autonomic fatigue early (days 1-35) with steady 55-day restorative trajectory.",
+    "clinical_summary": "Post-viral dysautonomia patient showing steady normalization of resting heart rate and spontaneous activity rebound."
+  },
+  {
+    "patient_id": "patient_4",
+    "name": "Dr. David Chen",
+    "age": 31,
+    "gender": "Male",
+    "archetype": "Overtraining Burnout",
+    "chronological_age": 31,
+    "baseline_profile": "High physical exertion (15,000+ steps) combined with severe sleep deprivation (<5.2h).",
+    "clinical_summary": "Surgical resident and marathoner showing acute autonomic nervous system exhaustion, elevated resting HR, and impaired recovery readiness."
+  },
+  {
+    "patient_id": "patient_5",
+    "name": "Sarah Jenkins",
+    "age": 29,
+    "gender": "Female",
+    "archetype": "Early Respiratory Infection (Subclinical SpO2 Dip)",
+    "chronological_age": 29,
+    "baseline_profile": "Healthy baseline with sudden subclinical capillary oxygen dip (98.5% -> 94.8%) days 60-75.",
+    "clinical_summary": "Early subclinical viral pneumonitis presentation where subtle SpO2 drift and compensatory tachycardia precede overt symptoms by 4 days."
+  },
+  {
+    "patient_id": "patient_6",
+    "name": "Michael Thorne",
+    "age": 49,
+    "gender": "Male",
+    "archetype": "Pre-Hypertensive Sedentary Drift",
+    "chronological_age": 49,
+    "baseline_profile": "Low physical step count (<3,800 steps) with steady vascular remodeling and systolic BP drift (122 -> 142 mmHg).",
+    "clinical_summary": "Sedentary desk worker presenting with progressive arterial stiffness, creeping blood pressure, and metabolic deceleration."
+  },
+  {
+    "patient_id": "patient_7",
+    "name": "Chloe Ramirez",
+    "age": 36,
+    "gender": "Female",
+    "archetype": "Circadian Disruption (Shift Worker)",
+    "chronological_age": 36,
+    "baseline_profile": "Rotating 7-day night shift cycle with acute circadian phase shift and fragmented sleep architecture.",
+    "clinical_summary": "ICU charge nurse showing periodic autonomic instability, high sleep duration variance (4h to 9h), and intermittent stress spikes."
+  },
+  {
+    "patient_id": "patient_8",
+    "name": "Arthur Pendelton",
+    "age": 72,
+    "gender": "Male",
+    "archetype": "Senior Citizen - Hypertensive Cardiovascular",
+    "chronological_age": 72,
+    "baseline_profile": "Age-adjusted cardiovascular baseline: resting HR 74 bpm, SBP 136 mmHg, reduced elasticity.",
+    "clinical_summary": "Geriatric patient with essential hypertension and mild left ventricular hypertrophy, sensitive to medication timing and weather."
+  },
+  {
+    "patient_id": "patient_9",
+    "name": "Margaret Holloway",
+    "age": 78,
+    "gender": "Female",
+    "archetype": "Senior Citizen - Frailty & Autonomic Dysregulation",
+    "chronological_age": 78,
+    "baseline_profile": "Age-adjusted baseline: low daily activity (2,600 steps), blunted autonomic responsiveness.",
+    "clinical_summary": "Elderly patient with mild frailty syndrome, monitored for sudden micro-drops in mobility and orthostatic hemodynamic strain."
+  },
+  {
+    "patient_id": "patient_10",
+    "name": "Vikram Patel",
+    "age": 45,
+    "gender": "Male",
+    "archetype": "Metabolic Syndrome Drift",
+    "chronological_age": 45,
+    "baseline_profile": "Progressive drop in daily steps (6,500 down to 2,800) alongside elevated stress and nighttime HR elevation.",
+    "clinical_summary": "Early metabolic syndrome cohort exhibiting chronic low-grade sympathetic activation and progressive lifestyle deconditioning."
+  },
+  {
+    "patient_id": "patient_11",
+    "name": "Rachel Adams",
+    "age": 39,
+    "gender": "Female",
+    "archetype": "Lifestyle Recovery Cohort",
+    "chronological_age": 39,
+    "baseline_profile": "High baseline strain days 1-30; intentional lifestyle rehabilitation days 31-90.",
+    "clinical_summary": "Successful lifestyle intervention participant achieving 28-point risk score reduction through structured sleep hygiene and brisk walking."
+  },
+  {
+    "patient_id": "patient_12",
+    "name": "Jordan Lee",
+    "age": 33,
+    "gender": "Non-binary",
+    "archetype": "Healthy Sedentary Baseline",
+    "chronological_age": 33,
+    "baseline_profile": "Sedentary lifestyle (5,200 steps), but healthy diet, low stress (18/100), and stable cardiovascular metrics.",
+    "clinical_summary": "Control subject with low physical activity but high autonomic stability and normal baseline homeostasis."
+  }
+]

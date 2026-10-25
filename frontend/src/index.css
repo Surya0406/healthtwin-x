@@ -115,3 +115,26 @@ input[type="range"].slider:active::-webkit-slider-thumb {
   .rise, .ecg-run, .skeleton { animation: none !important; }
   * { scroll-behavior: auto !important; }
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  header, nav, button, input, .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  section, div {
+    border-color: #cbd5e1 !important;
+    background-color: transparent !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+  h1, h2, h3, p, span {
+    color: #0f172a !important;
+  }
+}
+
