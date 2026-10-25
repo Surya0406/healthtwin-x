@@ -106,16 +106,22 @@ function mockXai(id) {
 }
 
 // ---------------------------------------------------------------- http
+// True once any call had to fall back to mock data, so the UI can warn the user.
+let usedMock = USE_MOCKS;
+export const isUsingMockData = () => usedMock;
+
 async function request(path, options, mockFn) {
   if (USE_MOCKS) return mockFn();
   try {
     const res = await fetch(`${BASE_URL}${path}`, options);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    usedMock = false; // a live call succeeded, backend is back
     return await res.json();
   } catch (err) {
     // Network failure -> backend offline -> mock. HTTP errors (404, 422) are real bugs: surface them.
     if (err instanceof TypeError) {
       console.warn(`Backend offline, using mock for ${path}`);
+      usedMock = true;
       return mockFn();
     }
     throw err;

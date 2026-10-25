@@ -70,7 +70,7 @@ export default function TwinVisualizer({ twinState }) {
       </div>
 
       <div className="grid gap-5 sm:grid-cols-[180px_1fr]">
-        <svg viewBox="0 0 200 420" className="mx-auto h-72 w-auto" role="img" aria-label="Human body with organ highlights">
+        <svg viewBox="0 0 200 420" className="mx-auto h-80 w-auto" role="img" aria-label="Human body with organ highlights">
           <defs>
             <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
               <feGaussianBlur stdDeviation="5" result="b" />

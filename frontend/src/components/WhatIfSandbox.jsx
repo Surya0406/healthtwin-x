@@ -88,9 +88,9 @@ export default function WhatIfSandbox({ patientId }) {
                   <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8 }} />
                   <Legend />
                   <Line type="monotone" dataKey="baseline_trajectory_hr" name="Current path"
-                    stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} dot={false} />
+                    stroke="#f43f5e" strokeDasharray="6 4" strokeWidth={2} dot={false} isAnimationActive={false} />
                   <Line type="monotone" dataKey="counterfactual_trajectory_hr" name="With changes"
-                    stroke="#10b981" strokeWidth={2.5} dot={false} />
+                    stroke="#10b981" strokeWidth={2.5} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

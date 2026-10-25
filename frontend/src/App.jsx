@@ -4,13 +4,18 @@ import TwinVisualizer from './components/TwinVisualizer.jsx';
 import XaiAlertPanel from './components/XaiAlertPanel.jsx';
 import BaselineCharts from './components/BaselineCharts.jsx';
 import WhatIfSandbox from './components/WhatIfSandbox.jsx';
-import { fetchPatients, fetchMonitoring, fetchTwinState, fetchXaiAlert } from './services/api.js';
+import { fetchPatients, fetchMonitoring, fetchTwinState, fetchXaiAlert, isUsingMockData } from './services/api.js';
 
 const DEFAULT_PATIENT = 'patient_2';
+// Optional deep link, e.g. http://localhost:5173/?patient=patient_1
+const initialPatient = () => {
+  const id = new URLSearchParams(window.location.search).get('patient');
+  return ['patient_1', 'patient_2', 'patient_3'].includes(id) ? id : DEFAULT_PATIENT;
+};
 
 export default function App() {
   const [patients, setPatients] = useState([]);
-  const [patientId, setPatientId] = useState(DEFAULT_PATIENT);
+  const [patientId, setPatientId] = useState(initialPatient);
   const [monitoring, setMonitoring] = useState(null);
   const [twinState, setTwinState] = useState(null);
   const [xai, setXai] = useState(null);
@@ -76,6 +81,12 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-6">
         {current?.description && <p className="text-sm text-slate-400">{current.description}</p>}
+
+        {!loading && isUsingMockData() && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200" role="status">
+            Backend not reachable at localhost:8000 — showing offline demo data, not real patient results.
+          </div>
+        )}
 
         {error && (
           <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-300" role="alert">

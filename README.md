@@ -26,29 +26,32 @@ HealthTwin X is a real-time clinical digital twin platform that models individua
 
 ---
 
-## Backend Setup (Windows)
+## Quick Start (Windows, one command)
+
+Prerequisites: Python 3.10+ and Node.js 18+.
 
 ```powershell
-# 1. Activate Python virtual environment
-venv\Scripts\Activate.ps1
-
-# 2. Upgrade pip and install dependencies
-py -m pip install --upgrade pip
-py -m pip install -r requirements.txt
-
-# 3. Test Anomaly Detector service
-py backend/services/anomaly_detector.py
+.\start.ps1
 ```
 
----
+This creates `.venv` and installs backend packages on the first run, runs `npm install` for the frontend, then starts both servers:
 
-## Frontend Setup
+- API: http://localhost:8000 (interactive docs at `/docs`)
+- Dashboard: http://localhost:5173 (opens on `patient_2`)
 
-```bash
-# 1. Install dependencies
+If the dashboard shows an amber "Backend not reachable" banner, it is displaying offline demo data. Check that the API window is running.
+
+### Manual setup
+
+```powershell
+# Backend (from the repo root)
+py -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m uvicorn backend.main:app --port 8000
+
+# Frontend (second terminal)
+cd frontend
 npm install
-
-# 2. Start development server
 npm run dev
 ```
 
@@ -56,11 +59,26 @@ npm run dev
 
 ## API Endpoints
 
+Full request and response shapes are in `shared_contracts/api_contract.md`.
+
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/health` | Service health status check |
-| `GET` | `/api/patients` | Retrieve list of monitored patients |
-| `GET` | `/api/patients/{id}/telemetry` | Retrieve 60-day historical vitals telemetry |
-| `POST` | `/api/anomaly/detect` | Run IForest anomaly detector; returns last 14 days with anomaly flags and scores |
-| `POST` | `/api/twin/forecast` | Run counterfactual simulation for what-if slider interventions |
-| `POST` | `/api/xai/explain` | Generate SHAP feature attribution and clinical intervention recommendations |
+| `GET` | `/api/patients` | List the three patient personas |
+| `GET` | `/api/patient/monitoring?patient_id=` | Last 14 days: vitals, 7-day baselines and bands, z-scores, anomaly flag, score and severity |
+| `GET` | `/api/patient/twin-state?patient_id=` | Digital twin status, four subsystem scores, organ colours |
+| `POST` | `/api/patient/simulate` | 7-day what-if projection and AI prescription for new sleep, steps and stress |
+| `GET` | `/api/patient/explain-alert?patient_id=` | SHAP feature attributions and a plain-language summary |
+| `POST` | `/api/patient/log-vitals` | Append a day of vitals (in memory, written through to the CSV) |
+
+Unknown `patient_id` values return HTTP 404.
+
+---
+
+## Project Layout
+
+```
+backend/            FastAPI app (main.py), core/ (data + baselines), services/ (ML)
+frontend/           Vite + React + Tailwind + Recharts dashboard
+shared_contracts/   api_contract.md and sample_patient_data.csv
+start.ps1           one-command launcher
+```
