@@ -76,21 +76,21 @@ class XAIExplainer:
             ordered = patient_rows.sort_values(
                 ["_sort_timestamp", "_source_order"], kind="stable", na_position="last"
             )
-            raw_values = ordered.loc[:, list(VITALS)].to_numpy(dtype=float)
+            raw_values = ordered.loc[:, list(VITALS)].to_numpy(dtype=float, copy=True)
             group_indices = ordered.index.to_numpy()
             patient_fallbacks = (
                 ordered.loc[:, list(VITALS)]
                 .median(axis=0)
                 .fillna(0.0)
-                .to_numpy(dtype=float)
+                .to_numpy(dtype=float, copy=True)
             )
             fallback_by_row[group_indices] = patient_fallbacks
 
             for feature_index in range(len(VITALS)):
                 history = pd.Series(raw_values[:, feature_index]).shift(1)
                 trailing = history.rolling(window=7, min_periods=1)
-                means = trailing.mean().to_numpy(dtype=float)
-                standard_deviations = trailing.std(ddof=0).to_numpy(dtype=float)
+                means = trailing.mean().to_numpy(dtype=float, copy=True)
+                standard_deviations = trailing.std(ddof=0).to_numpy(dtype=float, copy=True)
                 current_values = raw_values[:, feature_index]
                 no_prior_mean = np.isnan(means)
                 means[no_prior_mean] = current_values[no_prior_mean]
@@ -116,7 +116,7 @@ class XAIExplainer:
         # Build the model matrix in original row order from patient-local imputations.
         model_matrix = np.empty((len(work), len(VITALS)), dtype=float)
         for feature_index, feature in enumerate(VITALS):
-            raw_values = work[feature].to_numpy(dtype=float)
+            raw_values = work[feature].to_numpy(dtype=float, copy=True)
             missing = ~np.isfinite(raw_values)
             raw_values[missing] = baseline_means[missing, feature_index]
             still_missing = ~np.isfinite(raw_values)

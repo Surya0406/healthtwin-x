@@ -18,6 +18,20 @@ from pydantic import BaseModel, Field
 from backend.core.baseline_engine import BaselineEngine
 from backend.core.data_generator import DEFAULT_CSV_PATH, generate_sample_patient_data
 
+# Real ML services are owned by other members; fall back to contract stubs if missing.
+try:
+    from backend.services.anomaly_detector import AnomalyDetector
+except Exception:  # pragma: no cover
+    AnomalyDetector = None
+try:
+    from backend.services.twin_simulator import DigitalTwinSimulator
+except Exception:  # pragma: no cover
+    DigitalTwinSimulator = None
+try:
+    from backend.services.xai_explainer import XAIExplainer
+except Exception:  # pragma: no cover
+    XAIExplainer = None
+
 CSV_FILE_PATH = Path(DEFAULT_CSV_PATH)
 
 # Global in-memory data store and lock for concurrent safety
@@ -141,8 +155,25 @@ def get_monitoring(patient_id: str = Query(...)) -> dict[str, Any]:
 
     merged_days: list[dict[str, Any]] = []
 
+    # Real anomaly detection, keyed by timestamp; None means "use stub below"
+    anomaly_by_ts: dict[str, dict[str, Any]] | None = None
+    if AnomalyDetector is not None:
+        try:
+            rows = AnomalyDetector().fit_and_detect(patient_df, patient_id=patient_id)
+            anomaly_by_ts = {str(r["timestamp"]): r for r in rows}
+        except Exception:
+            anomaly_by_ts = None
+
     for idx, day in enumerate(baseline_days):
         day_copy = dict(day)
+
+        real = anomaly_by_ts.get(str(day_copy.get("timestamp"))) if anomaly_by_ts else None
+        if real is not None:
+            day_copy["anomaly_flag"] = int(real["anomaly_flag"])
+            day_copy["anomaly_score"] = float(real["anomaly_score"])
+            day_copy["severity_label"] = str(real["severity_label"])
+            merged_days.append(day_copy)
+            continue
 
         # Baseline stub anomaly output matching contract and personas
         if patient_id == "patient_1":
@@ -196,6 +227,13 @@ def get_twin_state(patient_id: str = Query(...)) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"No data for patient '{patient_id}'")
 
     latest_row = patient_df.iloc[-1].to_dict()
+
+    if DigitalTwinSimulator is not None:
+        try:
+            state = DigitalTwinSimulator().compute_twin_state(latest_row)
+            return {"patient_id": patient_id, **state}
+        except Exception:
+            pass
 
     # Stub response matching contract
     if patient_id == "patient_1":
@@ -261,6 +299,19 @@ def post_simulate(payload: SimulateRequest) -> dict[str, Any]:
             load_dataset()
         patient_df = _patients_df[_patients_df["patient_id"] == payload.patient_id].copy()
 
+    if DigitalTwinSimulator is not None:
+        try:
+            return DigitalTwinSimulator().simulate_counterfactual(
+                patient_df,
+                {
+                    "sleep_hours": payload.sleep_hours,
+                    "daily_steps": payload.daily_steps,
+                    "stress_index": payload.stress_index,
+                },
+            )
+        except Exception:
+            pass
+
     # Stub response matching contract
     base_hr = 78.2 if payload.patient_id == "patient_2" else (58.0 if payload.patient_id == "patient_1" else 68.0)
     base_risk = 64 if payload.patient_id == "patient_2" else (18 if payload.patient_id == "patient_1" else 35)
@@ -311,6 +362,13 @@ def get_explain_alert(patient_id: str = Query(...)) -> dict[str, Any]:
         if _patients_df.empty:
             load_dataset()
         patient_df = _patients_df[_patients_df["patient_id"] == patient_id].copy()
+
+    if XAIExplainer is not None:
+        try:
+            result = XAIExplainer().explain_latest_alert(patient_df.sort_values("timestamp"))
+            return {"patient_id": patient_id, **result}
+        except Exception:
+            pass
 
     # Stub response matching contract
     if patient_id == "patient_1":
